@@ -19,10 +19,10 @@
 // ===========================================================================
 
 import { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { AmountInput } from '../../src/components/AmountInput';
+import AmountInput from '../../src/components/AmountInput';
 import { AccountPicker } from '../../src/components/AccountPicker';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts, ASSET_TYPES } from '../../src/store/accountStore';
@@ -146,6 +146,7 @@ export default function Transfer() {
             onChangeText={setFromRaw}
             currency={from.commodity_mnemonic ?? 'IDR'}
             style={styles.amount}
+            placeholderTextColor={theme.inkFaint}
             placeholder="0"
           />
         ) : null}
@@ -166,6 +167,7 @@ export default function Transfer() {
             onChangeText={setToRaw}
             currency={to.commodity_mnemonic ?? 'IDR'}
             style={styles.amount}
+            placeholderTextColor={theme.inkFaint}
             placeholder="0"
           />
         ) : null}
@@ -175,6 +177,15 @@ export default function Transfer() {
             Both accounts are in {to.commodity_mnemonic}, so the amount received is the same.
           </Text>
         ) : null}
+
+        <Text style={styles.label}>What is this for</Text>
+        <TextInput
+          style={styles.note}
+          placeholder="e.g. Sold USD"
+          placeholderTextColor={theme.inkFaint}
+          value={description}
+          onChangeText={setDescription}
+        />
 
         {/* Read-only. See the header of this file before changing that. */}
         {!sameCurrency && from && to ? (
@@ -248,7 +259,24 @@ const styles = StyleSheet.create({
   selectorValue: { color: theme.ink, fontSize: 14, flex: 1, lineHeight: 19 },
   selectorPlaceholder: { color: theme.inkFaint, fontSize: 14, flex: 1 },
   selectorCcy: { color: theme.inkSoft, fontSize: 12, marginLeft: 10 },
-  amount: { marginTop: 10 },
+  amount: {
+    backgroundColor: theme.surface,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    color: theme.ink,
+    fontSize: 20,
+    marginTop: 10,
+    fontVariant: ['tabular-nums'],
+  },
+  note: {
+    backgroundColor: theme.surface,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    color: theme.ink,
+    fontSize: 15,
+  },
   mirrorNote: { color: theme.inkFaint, fontSize: 12, lineHeight: 17, marginTop: 10 },
   rateBox: {
     backgroundColor: theme.surfaceSoft,

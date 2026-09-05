@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Forstra Digital
 
 import { useEffect, useCallback, useState } from 'react';
-import { AppState } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,6 +11,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import * as Sentry from '@sentry/react-native';
 import { useConnection } from '../src/store/connectionStore';
+import { readInFlight, clearInFlight, checkRequest } from '../src/services/api';
 import { isCrashReportingEnabled, loadCrashReportingPreference } from '../src/services/crashReporting';
 
 SplashScreen.preventAutoHideAsync();
@@ -28,6 +29,39 @@ Sentry.init({
   beforeSend: (event) => (isCrashReportingEnabled() ? event : null),
 });
 
+/**
+ * Resolve a write that was interrupted between the server committing and the
+ * response arriving.
+ *
+ * The id was parked on disk before the request went out. If it turns out the
+ * write landed, say so and clear the marker. If it did not, say that too, so
+ * the entry can be made again without wondering. If we still cannot reach the
+ * server, leave the marker alone and try again next launch -- guessing either
+ * way is what produces a duplicate transaction in someone's ledger.
+ */
+async function resolveInterruptedWrite() {
+  const pending = await readInFlight();
+  if (!pending) return;
+
+  const result = await checkRequest(pending.requestId);
+  if (!result.ok) return; // still unreachable; the marker survives
+
+  if (result.data.found) {
+    await clearInFlight();
+    Alert.alert(
+      'That did go through',
+      `"${pending.label}" reached your book before the connection dropped. Nothing more to do, and do not enter it again.`,
+    );
+    return;
+  }
+
+  await clearInFlight();
+  Alert.alert(
+    'That did not go through',
+    `"${pending.label}" never reached your book. Nothing was written, so it is safe to enter again.`,
+  );
+}
+
 function RootLayout() {
   const refresh = useConnection((s) => s.refresh);
   const [ready, setReady] = useState(false);
@@ -38,7 +72,9 @@ function RootLayout() {
 
   useEffect(() => {
     loadCrashReportingPreference();
-    refresh().finally(() => setReady(true));
+    refresh()
+      .then(resolveInterruptedWrite)
+      .finally(() => setReady(true));
   }, [refresh]);
 
   // Re-check on foreground. There is deliberately no background poller: the

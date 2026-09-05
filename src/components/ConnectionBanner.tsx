@@ -19,7 +19,7 @@ export function ConnectionBanner({ onPress }: { onPress?: () => void }) {
 
   if (state === 'online' || state === 'unknown') return null;
 
-  let tint = theme.amber;
+  let tint: string = theme.amber;
   let text: string;
 
   switch (state) {

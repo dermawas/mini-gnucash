@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Forstra Digital
+
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, ScrollView, Switch, StyleSheet, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { ConnectionBanner } from '../../src/components/ConnectionBanner';
+import { useConnection } from '../../src/store/connectionStore';
+import { useAccounts } from '../../src/store/accountStore';
+import { clearCredentials, clearAccountCache, loadCredentials } from '../../src/services/api';
+import {
+  isCrashReportingEnabled, setCrashReportingEnabled, loadCrashReportingPreference,
+} from '../../src/services/crashReporting';
+import { theme } from '../../src/constants/theme';
+
+export default function Settings() {
+  const router = useRouter();
+  const conn = useConnection();
+  const loadAccounts = useAccounts((s) => s.load);
+  const resetAccounts = useAccounts((s) => s.reset);
+  const accountCount = useAccounts((s) => s.accounts.length);
+  const cachedAt = useAccounts((s) => s.cachedAt);
+
+  const [url, setUrl] = useState<string | null>(null);
+  const [crash, setCrash] = useState(isCrashReportingEnabled());
+
+  useEffect(() => {
+    loadCredentials().then((c) => setUrl(c?.url ?? null));
+    loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
+  }, []);
+
+  async function handleDisconnect() {
+    Alert.alert(
+      'Disconnect from this ledger?',
+      'Your GnuCash book is untouched. This only removes the server address and token from this phone, and clears the saved account list.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            await clearCredentials();
+            await clearAccountCache();
+            resetAccounts();
+            conn.reset();
+            router.replace('/connect');
+          },
+        },
+      ],
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.h1}>Settings</Text>
+        <ConnectionBanner />
+
+        <Text style={styles.section}>Ledger</Text>
+        <View style={styles.card}>
+          <Row label="Server" value={url ?? 'Not configured'} />
+          <Row label="Status" value={conn.state} />
+          {conn.lockedBy ? <Row label="Locked by" value={conn.lockedBy} /> : null}
+          <Row label="Accounts" value={accountCount ? String(accountCount) : '—'} />
+          <Row
+            label="Trading accounts"
+            value={conn.state === 'online' || conn.state === 'locked'
+              ? (conn.tradingAccounts ? 'On' : 'Off')
+              : '—'}
+          />
+          {cachedAt ? (
+            <Row label="Account list saved" value={new Date(cachedAt).toLocaleString()} />
+          ) : null}
+        </View>
+
+        <Pressable style={styles.btnGhost} onPress={async () => { await conn.refresh(); await loadAccounts(); }}>
+          <Text style={styles.btnGhostText}>Refresh accounts</Text>
+        </Pressable>
+
+        <Text style={styles.section}>Privacy</Text>
+        <View style={styles.card}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.rowLabel}>Crash reporting</Text>
+              <Text style={styles.hint}>
+                Off by default. Sends crash traces only, never your ledger data.
+              </Text>
+            </View>
+            <Switch
+              value={crash}
+              onValueChange={async (v) => { setCrash(v); await setCrashReportingEnabled(v); }}
+              trackColor={{ true: theme.accent, false: theme.hairline }}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.section}>What this app will not do</Text>
+        <View style={styles.card}>
+          <Text style={styles.prose}>
+            It cannot edit or delete a transaction, and it cannot reconcile. Those belong in GnuCash
+            desktop, where there is an undo and the whole book in front of you.
+            {'\n\n'}
+            It marks entries cleared, never reconciled.
+            {'\n\n'}
+            It never converts between currencies for display, so there is no combined total anywhere.
+          </Text>
+        </View>
+
+        <Pressable style={styles.btnDanger} onPress={handleDisconnect}>
+          <Text style={styles.btnDangerText}>Disconnect</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.bg },
+  scroll: { padding: 20, paddingBottom: 60 },
+  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 16 },
+  section: {
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.2,
+    textTransform: 'uppercase', marginTop: 28, marginBottom: 8,
+  },
+  card: { backgroundColor: theme.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 4 },
+  row: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.hairline,
+  },
+  rowLabel: { color: theme.inkSoft, fontSize: 14 },
+  rowValue: { color: theme.ink, fontSize: 13, maxWidth: '60%', textAlign: 'right' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  switchText: { flex: 1, marginRight: 12 },
+  hint: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  prose: { color: theme.inkSoft, fontSize: 13, lineHeight: 20, paddingVertical: 14 },
+  btnGhost: { paddingVertical: 14, alignItems: 'center', marginTop: 10 },
+  btnGhostText: { color: theme.accent, fontSize: 14, fontWeight: '600' },
+  btnDanger: {
+    borderWidth: 1, borderColor: theme.coral, borderRadius: 12,
+    paddingVertical: 15, alignItems: 'center', marginTop: 32,
+  },
+  btnDangerText: { color: theme.coral, fontSize: 15, fontWeight: '600' },
+});

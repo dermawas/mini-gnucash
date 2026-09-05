@@ -75,6 +75,9 @@ function extractErrorMessage(rawText: string, status: number): string {
  *   rejected      the server reached a decision and said no, with a reason
  *                 worth showing verbatim.
  */
+/** The ways a call can fail. Named so other modules can narrow on it. */
+export type RpcFailureKind = 'offline' | 'unauthorized' | 'locked' | 'rejected';
+
 export type RpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; kind: 'offline'; error: string }
@@ -392,7 +395,7 @@ type CoaCache = { accounts: Account[]; cachedAt: string };
 export type AccountsResult =
   | { ok: true; accounts: Account[]; fromCache: false }
   | { ok: true; accounts: Account[]; fromCache: true; cachedAt: string }
-  | { ok: false; kind: RpcResult<never> extends { ok: false; kind: infer K } ? K : never; error: string };
+  | { ok: false; kind: RpcFailureKind; error: string };
 
 export async function getAccounts(creds?: Credentials | null): Promise<AccountsResult> {
   const live = await callRpc<Account[]>('mgc_get_accounts', {}, creds);
