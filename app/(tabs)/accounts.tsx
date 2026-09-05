@@ -6,7 +6,7 @@
 // It has to be a tree rather than a flat list, and that is not a style choice.
 // A real book puts the accounts you actually use several levels deep:
 //
-//   01-Assets                                    depth 1  placeholder
+//   01-Assets                                    depth 0  placeholder
 //     011-Current Assets                         depth 1  placeholder
 //       0111-Checking Account                    depth 2  placeholder
 //         BCA, Jenius (IDR), Jago, Blu ...       depth 3  the real accounts
@@ -139,10 +139,14 @@ export default function Accounts() {
       </View>
 
       {current ? (
-        <Pressable style={styles.up} onPress={() => setTrail((t) => t.slice(0, -1))}>
-          <Icon name="chevron-left" size={18} color={theme.accent} />
-          <Text style={styles.upText}>
-            {trail.length > 1 ? trail[trail.length - 2].name : 'All accounts'}
+        <Pressable
+          style={({ pressed }) => [styles.up, pressed && styles.upPressed]}
+          onPress={() => setTrail((t) => t.slice(0, -1))}
+          hitSlop={8}
+        >
+          <Icon name="chevron-left" size={26} color={theme.accent} />
+          <Text style={styles.upText} numberOfLines={1}>
+            {trail.length > 1 ? `Back to ${trail[trail.length - 2].name}` : 'All accounts'}
           </Text>
         </Pressable>
       ) : (
@@ -250,8 +254,22 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
   crumb: { color: theme.inkFaint, fontSize: 11, marginTop: 4 },
-  up: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12 },
-  upText: { color: theme.accent, fontSize: 14, fontWeight: '600', marginLeft: 2 },
+  // Full-width and row-height on purpose. This was a 18px chevron next to 14px
+  // text with no top padding -- a target well under the 48dp minimum, and the
+  // only way back out of a drill-down, so a missed tap stranded you.
+  up: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: theme.surface,
+    minHeight: 52,
+  },
+  upPressed: { opacity: 0.6 },
+  upText: { color: theme.accent, fontSize: 16, fontWeight: '600', marginLeft: 4, flex: 1 },
   actions: { paddingHorizontal: 16, paddingBottom: 14 },
   actionsInner: { flexDirection: 'row', justifyContent: 'space-between' },
   action: {
