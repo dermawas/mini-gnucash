@@ -167,6 +167,10 @@ export default function Accounts() {
               <Icon name="swap-horizontal" size={18} color={theme.accent} />
               <Text style={styles.actionText}>Transfer</Text>
             </Pressable>
+            <Pressable style={styles.action} onPress={() => router.push('/scan/review')}>
+              <Icon name="camera-outline" size={18} color={theme.accent} />
+              <Text style={styles.actionText}>Scan</Text>
+            </Pressable>
           </View>
         </View>
       )}

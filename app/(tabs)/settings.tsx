@@ -2,7 +2,9 @@
 // Copyright (C) 2026 Forstra Digital
 
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Switch, StyleSheet, Alert } from 'react-native';
+import {
+  View, Text, Pressable, ScrollView, Switch, TextInput, StyleSheet, Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -12,6 +14,7 @@ import { clearCredentials, clearAccountCache, loadCredentials } from '../../src/
 import {
   isCrashReportingEnabled, setCrashReportingEnabled, loadCrashReportingPreference,
 } from '../../src/services/crashReporting';
+import { getAiKey, saveAiKey, clearAiKey, maskKey } from '../../src/services/aiKey';
 import { theme } from '../../src/constants/theme';
 
 export default function Settings() {
@@ -24,10 +27,15 @@ export default function Settings() {
 
   const [url, setUrl] = useState<string | null>(null);
   const [crash, setCrash] = useState(isCrashReportingEnabled());
+  // The saved key is shown masked and never re-rendered in full. `keyDraft` is
+  // only ever what the user is typing right now.
+  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState('');
 
   useEffect(() => {
     loadCredentials().then((c) => setUrl(c?.url ?? null));
     loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
+    getAiKey().then(setSavedKey);
   }, []);
 
   async function handleDisconnect() {
@@ -77,6 +85,56 @@ export default function Settings() {
         <Pressable style={styles.btnGhost} onPress={async () => { await conn.refresh(); await loadAccounts(); }}>
           <Text style={styles.btnGhostText}>Refresh accounts</Text>
         </Pressable>
+
+        <Text style={styles.section}>Receipt scanning</Text>
+        <View style={styles.card}>
+          {savedKey ? (
+            <Row label="Gemini key" value={maskKey(savedKey)} />
+          ) : (
+            <Text style={styles.hint}>
+              No key saved. Scanning is off until you add one.
+            </Text>
+          )}
+          <Text style={styles.prose}>
+            Scanning uses a Gemini key you obtain yourself, billed to your own Google account. It is
+            kept in this phone's keystore and sent only to Google, never to your ledger and never to
+            us. A receipt photo is the one thing this app sends outside your own network.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={keyDraft}
+            onChangeText={setKeyDraft}
+            placeholder={savedKey ? 'Replace the saved key' : 'Paste your Gemini API key'}
+            placeholderTextColor={theme.inkFaint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+          <Pressable
+            style={[styles.btnGhost, !keyDraft.trim() && styles.btnOff]}
+            disabled={!keyDraft.trim()}
+            onPress={async () => {
+              await saveAiKey(keyDraft);
+              setSavedKey(keyDraft.trim());
+              setKeyDraft('');
+              Alert.alert('Key saved', 'Receipt scanning is ready.');
+            }}
+          >
+            <Text style={styles.btnGhostText}>Save key</Text>
+          </Pressable>
+          {savedKey ? (
+            <Pressable
+              style={styles.btnGhost}
+              onPress={async () => {
+                await clearAiKey();
+                setSavedKey(null);
+                Alert.alert('Key removed', 'Receipt scanning is off until you add one again.');
+              }}
+            >
+              <Text style={styles.btnGhostText}>Remove key</Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <Text style={styles.section}>Privacy</Text>
         <View style={styles.card}>
@@ -145,6 +203,11 @@ const styles = StyleSheet.create({
   prose: { color: theme.inkSoft, fontSize: 13, lineHeight: 20, paddingVertical: 14 },
   btnGhost: { paddingVertical: 14, alignItems: 'center', marginTop: 10 },
   btnGhostText: { color: theme.accent, fontSize: 14, fontWeight: '600' },
+  btnOff: { opacity: 0.4 },
+  input: {
+    backgroundColor: theme.bg, borderRadius: 8, color: theme.ink, fontSize: 14,
+    paddingVertical: 12, paddingHorizontal: 12, marginTop: 12, minHeight: 46,
+  },
   btnDanger: {
     borderWidth: 1, borderColor: theme.coral, borderRadius: 12,
     paddingVertical: 15, alignItems: 'center', marginTop: 32,
