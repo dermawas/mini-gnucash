@@ -102,7 +102,12 @@ export default function Accounts() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.h1}>Accounts</Text>
-        <View style={styles.actions}>
+      </View>
+
+      {/* Actions sit on their own row. Sharing one with the title clipped the
+          last of them off the right edge on a 1080px screen. */}
+      <View style={styles.actions}>
+        <View style={styles.actionsInner}>
           <Pressable style={styles.action} onPress={() => router.push('/entry/spend')}>
             <Icon name="minus-circle-outline" size={18} color={theme.accent} />
             <Text style={styles.actionText}>Spend</Text>
@@ -203,18 +208,21 @@ export default function Accounts() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  header: {
+  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
+  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
+  actions: { paddingHorizontal: 16, paddingBottom: 14 },
+  actionsInner: { flexDirection: 'row', justifyContent: 'space-between' },
+  action: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+    justifyContent: 'center',
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: theme.surface,
   },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
-  actions: { flexDirection: 'row', alignItems: 'center' },
-  action: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingLeft: 14 },
-  actionText: { color: theme.accent, fontSize: 13, fontWeight: '600', marginLeft: 5 },
+  actionText: { color: theme.accent, fontSize: 13, fontWeight: '600', marginLeft: 6 },
   cacheNote: {
     color: theme.amber, fontSize: 12, lineHeight: 17,
     paddingHorizontal: 20, paddingBottom: 12,
