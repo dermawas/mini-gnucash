@@ -1,0 +1,21 @@
+# systemd unit template for running PostgREST as a persistent service.
+#
+# Copy to /etc/systemd/system/postgrest.service, adjust the User= and
+# ExecStart= path if yours differ, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now postgrest
+#   sudo systemctl status postgrest
+
+[Unit]
+Description=PostgREST for Ledgerize GnuCash Sync
+After=network.target postgresql.service
+
+[Service]
+# Run as a non-root user with read access to the config file below.
+User=CHANGE_ME_your_user
+ExecStart=/usr/local/bin/postgrest /etc/postgrest/postgrest.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
