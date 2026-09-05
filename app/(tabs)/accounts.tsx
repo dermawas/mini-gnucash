@@ -102,10 +102,23 @@ export default function Accounts() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.h1}>Accounts</Text>
-        <Pressable style={styles.action} onPress={() => router.push('/entry/transfer')}>
-          <Icon name="swap-horizontal" size={18} color={theme.accent} />
-          <Text style={styles.actionText}>Transfer</Text>
-        </Pressable>
+        <View style={styles.actions}>
+          <Pressable style={styles.action} onPress={() => router.push('/entry/spend')}>
+            <Icon name="minus-circle-outline" size={18} color={theme.accent} />
+            <Text style={styles.actionText}>Spend</Text>
+          </Pressable>
+          <Pressable
+            style={styles.action}
+            onPress={() => router.push('/entry/spend?direction=inflow')}
+          >
+            <Icon name="plus-circle-outline" size={18} color={theme.accent} />
+            <Text style={styles.actionText}>Income</Text>
+          </Pressable>
+          <Pressable style={styles.action} onPress={() => router.push('/entry/transfer')}>
+            <Icon name="swap-horizontal" size={18} color={theme.accent} />
+            <Text style={styles.actionText}>Transfer</Text>
+          </Pressable>
+        </View>
       </View>
 
       <ConnectionBanner />
@@ -199,8 +212,9 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
-  action: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingLeft: 12 },
-  actionText: { color: theme.accent, fontSize: 14, fontWeight: '600', marginLeft: 6 },
+  actions: { flexDirection: 'row', alignItems: 'center' },
+  action: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingLeft: 14 },
+  actionText: { color: theme.accent, fontSize: 13, fontWeight: '600', marginLeft: 5 },
   cacheNote: {
     color: theme.amber, fontSize: 12, lineHeight: 17,
     paddingHorizontal: 20, paddingBottom: 12,
