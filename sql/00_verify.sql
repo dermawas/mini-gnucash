@@ -98,7 +98,7 @@ SELECT post_date::time AS time_of_day, count(*)
 -- RESULT: 10:59:00 -> 9,640    (GnuCash's timezone-neutral time)
 --         00:00:00 ->    32    (all written by Ledgerize, which passed a bare date)
 -- A bare date casts to 00:00:00, which in UTC+7 can render as the PREVIOUS day.
--- Every write RPC here emits 10:59:00. See pocket_neutral_ts() in 20_helpers.sql.
+-- Every write RPC here emits 10:59:00. See mgc_neutral_ts() in 20_helpers.sql.
 
 \echo '=== Q5. reconcile_date convention per reconcile_state ==='
 SELECT reconcile_state,
@@ -110,7 +110,7 @@ SELECT reconcile_state,
 -- RESULT: 'c' -> 1,812 rows, 1,799 at epoch, real dates never used
 --         'n' -> 18,699 rows, 18,591 at epoch, 100 null
 --         'y' -> 2,254 rows, ALL carrying real dates (2022-2024)
--- So reconcile_date is only meaningful for 'y'. pocket_set_split_cleared
+-- So reconcile_date is only meaningful for 'y'. mgc_set_split_cleared
 -- therefore LEAVES IT ALONE when flipping n <-> c. Do not "helpfully" set it.
 
 \echo '=== Q6. Do splits carry their own slots? ==='
@@ -135,8 +135,8 @@ SELECT a.name, a.account_type, count(sp.guid) AS splits
 SELECT guid, name, account_type FROM accounts WHERE account_type = 'ROOT';
 -- RESULT: 'Root Account'  89fab298edc14f88b859a8f46b6d49e9  <- the real tree
 --         'Template Root' 18e207a1bcc542aaa66f6904e436320d  <- scheduled-txn templates
--- pocket_get_accounts() must EXCLUDE the Template Root subtree, and
--- pocket_create_account() must never parent under either root directly.
+-- mgc_get_accounts() must EXCLUDE the Template Root subtree, and
+-- mgc_create_account() must never parent under either root directly.
 
 \echo '=== Q9. Existing grants and sequences ==='
 SELECT grantee, table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privs

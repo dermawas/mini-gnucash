@@ -18,8 +18,8 @@
 -- The security model, in one paragraph:
 --
 --   The phone holds a JWT naming a Postgres role. PostgREST connects as
---   `authenticator_pocket` (which can log in but owns nothing), then switches
---   into `gnucash_pocket_user` for the request. `gnucash_pocket_user` has
+--   `authenticator_mgc` (which can log in but owns nothing), then switches
+--   into `gnucash_mgc_user` for the request. `gnucash_mgc_user` has
 --   *zero table privileges* -- it cannot SELECT a single row of anything. Every
 --   read and every write goes through a SECURITY DEFINER function owned by
 --   `gnucash_owner`, which is where the real privileges live.
@@ -66,8 +66,8 @@ END $$;
 
 -- What each grant is actually for. Nothing here is speculative; every line
 -- corresponds to a specific statement in the function files.
-GRANT SELECT, INSERT         ON accounts     TO gnucash_owner;  -- pocket_create_account
-GRANT SELECT, INSERT, UPDATE ON splits       TO gnucash_owner;  -- UPDATE: pocket_set_split_cleared
+GRANT SELECT, INSERT         ON accounts     TO gnucash_owner;  -- mgc_create_account
+GRANT SELECT, INSERT, UPDATE ON splits       TO gnucash_owner;  -- UPDATE: mgc_set_split_cleared
 GRANT SELECT, INSERT         ON transactions TO gnucash_owner;
 GRANT SELECT, INSERT         ON slots        TO gnucash_owner;  -- idempotency markers
 GRANT SELECT                 ON commodities  TO gnucash_owner;  -- currency + fraction lookups
@@ -100,26 +100,26 @@ GRANT USAGE, SELECT ON SEQUENCE slots_id_seq TO gnucash_owner;
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gnucash_pocket_user') THEN
-    CREATE ROLE gnucash_pocket_user NOLOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gnucash_mgc_user') THEN
+    CREATE ROLE gnucash_mgc_user NOLOGIN;
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator_pocket') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator_mgc') THEN
     -- NOINHERIT matters: authenticator must not passively hold the app role's
     -- privileges, only be able to SET ROLE into it for the duration of a request.
-    CREATE ROLE authenticator_pocket NOINHERIT LOGIN
+    CREATE ROLE authenticator_mgc NOINHERIT LOGIN
       PASSWORD 'CHANGE_ME_authenticator_password';
-    RAISE NOTICE 'Created authenticator_pocket with a placeholder password -- change it and put it in postgrest.conf.';
+    RAISE NOTICE 'Created authenticator_mgc with a placeholder password -- change it and put it in postgrest.conf.';
   END IF;
 END $$;
 
-GRANT gnucash_pocket_user TO authenticator_pocket;
+GRANT gnucash_mgc_user TO authenticator_mgc;
 
 -- Needed for EXECUTE on functions in this schema to be reachable at all.
 -- Easy to forget, and the resulting error does not mention the schema.
-GRANT USAGE ON SCHEMA public TO gnucash_pocket_user;
+GRANT USAGE ON SCHEMA public TO gnucash_mgc_user;
 
--- NOTE: there are deliberately NO table grants for gnucash_pocket_user here.
+-- NOTE: there are deliberately NO table grants for gnucash_mgc_user here.
 -- Not on accounts, not on commodities, not on anything. Function EXECUTE
 -- grants are issued at the end of each function file, so that a function and
 -- its grant can never drift apart.
@@ -151,10 +151,10 @@ SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS pr
 --   transactions INSERT,SELECT
 
 \echo ''
-\echo '=== gnucash_pocket_user must have NO table privileges. Expect zero rows. ==='
+\echo '=== gnucash_mgc_user must have NO table privileges. Expect zero rows. ==='
 SELECT table_name, privilege_type
   FROM information_schema.table_privileges
- WHERE grantee = 'gnucash_pocket_user';
+ WHERE grantee = 'gnucash_mgc_user';
 
 \echo ''
 \echo '=== sequence access for slots_id_seq (both must be t) ==='

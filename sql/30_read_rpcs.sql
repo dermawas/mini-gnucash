@@ -12,7 +12,7 @@
 \set ON_ERROR_STOP on
 
 -- ---------------------------------------------------------------------------
--- pocket_ping -- reachability, lock state and book mode in one round trip
+-- mgc_ping -- reachability, lock state and book mode in one round trip
 -- ---------------------------------------------------------------------------
 -- Deliberately answers three separate client questions at once, because the app
 -- needs all three to decide what to render and they change independently:
@@ -25,7 +25,7 @@
 -- state. A phone with a bad JWT gets a 401, which is a DIFFERENT state and must
 -- not be conflated -- one is "come back when you're on the VPN", the other is
 -- "your credentials are wrong, go to Settings".
-CREATE OR REPLACE FUNCTION public.pocket_ping()
+CREATE OR REPLACE FUNCTION public.mgc_ping()
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -38,18 +38,18 @@ BEGIN
     'server_time',      to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
     'book_locked',      v_host IS NOT NULL,
     'locked_by',        v_host,
-    'trading_accounts', pocket_uses_trading_accounts(),
+    'trading_accounts', mgc_uses_trading_accounts(),
     'account_count',    (SELECT count(*) FROM accounts WHERE account_type <> 'ROOT')
   );
 END;
 $$;
 
-ALTER FUNCTION public.pocket_ping() OWNER TO gnucash_owner;
-REVOKE ALL  ON FUNCTION public.pocket_ping() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.pocket_ping() TO gnucash_pocket_user;
+ALTER FUNCTION public.mgc_ping() OWNER TO gnucash_owner;
+REVOKE ALL  ON FUNCTION public.mgc_ping() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mgc_ping() TO gnucash_mgc_user;
 
 -- ---------------------------------------------------------------------------
--- pocket_get_accounts -- the chart of accounts, with paths already built
+-- mgc_get_accounts -- the chart of accounts, with paths already built
 -- ---------------------------------------------------------------------------
 -- Replaces what would otherwise be `GET /accounts` plus `GET /commodities`,
 -- and with them the two table grants those endpoints require. That is the whole
@@ -71,7 +71,7 @@ GRANT EXECUTE ON FUNCTION public.pocket_ping() TO gnucash_pocket_user;
 --
 -- Separator is ':' to match GnuCash's own full-name convention, so a path shown
 -- here reads identically to the same account in desktop.
-CREATE OR REPLACE FUNCTION public.pocket_get_accounts()
+CREATE OR REPLACE FUNCTION public.mgc_get_accounts()
 RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -87,7 +87,7 @@ BEGIN
            a.name::text AS full_path,
            0            AS depth
       FROM accounts a
-     WHERE a.parent_guid = pocket_root_guid()
+     WHERE a.parent_guid = mgc_root_guid()
 
     UNION ALL
 
@@ -127,9 +127,9 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.pocket_get_accounts() OWNER TO gnucash_owner;
-REVOKE ALL  ON FUNCTION public.pocket_get_accounts() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.pocket_get_accounts() TO gnucash_pocket_user;
+ALTER FUNCTION public.mgc_get_accounts() OWNER TO gnucash_owner;
+REVOKE ALL  ON FUNCTION public.mgc_get_accounts() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mgc_get_accounts() TO gnucash_mgc_user;
 
 -- Placeholder and hidden accounts are RETURNED, not filtered out. The client
 -- decides: a placeholder is still a valid parent when creating an account and

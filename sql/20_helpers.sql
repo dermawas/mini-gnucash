@@ -11,7 +11,7 @@
 \set ON_ERROR_STOP on
 
 -- ---------------------------------------------------------------------------
--- pocket_new_guid -- GnuCash-format identifier
+-- mgc_new_guid -- GnuCash-format identifier
 -- ---------------------------------------------------------------------------
 -- GnuCash GUIDs are a random 128-bit value, hex-encoded, 32 lowercase chars.
 -- There is no embedded algorithm or metadata, so an externally generated one is
@@ -21,16 +21,16 @@
 --
 -- The salt lets one statement mint several distinct guids in the same
 -- clock_timestamp() tick.
-CREATE OR REPLACE FUNCTION public.pocket_new_guid(p_salt text)
+CREATE OR REPLACE FUNCTION public.mgc_new_guid(p_salt text)
 RETURNS varchar(32)
 LANGUAGE sql VOLATILE AS $$
   SELECT md5(gen_random_uuid()::text || clock_timestamp()::text || p_salt)::varchar(32);
 $$;
 
-REVOKE ALL ON FUNCTION public.pocket_new_guid(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_new_guid(text) FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------
--- pocket_neutral_ts -- GnuCash's timezone-neutral posting time
+-- mgc_neutral_ts -- GnuCash's timezone-neutral posting time
 -- ---------------------------------------------------------------------------
 -- GnuCash writes post_date at 10:59:00, not midnight. The reason is that
 -- 10:59 UTC lands on the same calendar date in every timezone from roughly
@@ -43,16 +43,16 @@ REVOKE ALL ON FUNCTION public.pocket_new_guid(text) FROM PUBLIC;
 -- at 00:00:00 while all 9,640 desktop-written rows sit at 10:59:00.
 --
 -- Every write path in this project goes through here.
-CREATE OR REPLACE FUNCTION public.pocket_neutral_ts(p_date date)
+CREATE OR REPLACE FUNCTION public.mgc_neutral_ts(p_date date)
 RETURNS timestamp
 LANGUAGE sql IMMUTABLE AS $$
   SELECT p_date::timestamp + interval '10 hours 59 minutes';
 $$;
 
-REVOKE ALL ON FUNCTION public.pocket_neutral_ts(date) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_neutral_ts(date) FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------
--- pocket_assert_unlocked -- refuse to write while GnuCash desktop holds the book
+-- mgc_assert_unlocked -- refuse to write while GnuCash desktop holds the book
 -- ---------------------------------------------------------------------------
 -- gnclock is desktop's own advisory lock table: it writes a row on open and
 -- removes it on clean close.
@@ -72,7 +72,7 @@ REVOKE ALL ON FUNCTION public.pocket_neutral_ts(date) FROM PUBLIC;
 -- INSERT or UPDATE. A repeat request must still be able to answer
 -- "already recorded" while the book is open -- refusing that would push a
 -- client into retrying a write that already succeeded.
-CREATE OR REPLACE FUNCTION public.pocket_assert_unlocked()
+CREATE OR REPLACE FUNCTION public.mgc_assert_unlocked()
 RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -88,10 +88,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.pocket_assert_unlocked() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_assert_unlocked() FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------
--- pocket_uses_trading_accounts -- read the book option, do not assume
+-- mgc_uses_trading_accounts -- read the book option, do not assume
 -- ---------------------------------------------------------------------------
 -- This single boolean decides whether a cross-currency transfer is written as
 -- 2 splits or 4. Getting it wrong is not silent corruption, but it is wrong
@@ -108,7 +108,7 @@ REVOKE ALL ON FUNCTION public.pocket_assert_unlocked() FROM PUBLIC;
 -- Note the *existence* of Trading:* accounts is not the answer -- GnuCash
 -- auto-creates those whenever it needs to balance a cross-currency entry, which
 -- can happen with the option off. The book option slot is the answer.
-CREATE OR REPLACE FUNCTION public.pocket_uses_trading_accounts()
+CREATE OR REPLACE FUNCTION public.mgc_uses_trading_accounts()
 RETURNS boolean
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
@@ -133,10 +133,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.pocket_uses_trading_accounts() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_uses_trading_accounts() FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------
--- pocket_trading_account -- resolve the trading account for one commodity
+-- mgc_trading_account -- resolve the trading account for one commodity
 -- ---------------------------------------------------------------------------
 -- With trading accounts enabled, GnuCash keeps one trading account per
 -- commodity at Trading:<namespace>:<mnemonic>, e.g. Trading:CURRENCY:USD.
@@ -163,7 +163,7 @@ REVOKE ALL ON FUNCTION public.pocket_uses_trading_accounts() FROM PUBLIC;
 -- Returns NULL when the book has no trading account for that commodity yet.
 -- Callers must treat NULL as "refuse and explain", NEVER as "create one" --
 -- see the note in 40_write_rpcs.sql.
-CREATE OR REPLACE FUNCTION public.pocket_trading_account(p_commodity_guid varchar(32))
+CREATE OR REPLACE FUNCTION public.mgc_trading_account(p_commodity_guid varchar(32))
 RETURNS varchar(32)
 LANGUAGE sql STABLE AS $BODY$
   SELECT a.guid
@@ -177,10 +177,10 @@ LANGUAGE sql STABLE AS $BODY$
    LIMIT 1;
 $BODY$;
 
-REVOKE ALL ON FUNCTION public.pocket_trading_account(varchar) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_trading_account(varchar) FROM PUBLIC;
 
 -- ---------------------------------------------------------------------------
--- pocket_root_guid -- the real root account, not the template root
+-- mgc_root_guid -- the real root account, not the template root
 -- ---------------------------------------------------------------------------
 -- A GnuCash book normally contains TWO accounts of type ROOT: the real tree,
 -- and "Template Root" which holds scheduled-transaction templates. Walking
@@ -189,7 +189,7 @@ REVOKE ALL ON FUNCTION public.pocket_trading_account(varchar) FROM PUBLIC;
 --
 -- Identified by which root actually has a commodity: the template root's
 -- commodity_guid is NULL.
-CREATE OR REPLACE FUNCTION public.pocket_root_guid()
+CREATE OR REPLACE FUNCTION public.mgc_root_guid()
 RETURNS varchar(32)
 LANGUAGE sql STABLE AS $$
   SELECT guid FROM accounts
@@ -198,7 +198,7 @@ LANGUAGE sql STABLE AS $$
    LIMIT 1;
 $$;
 
-REVOKE ALL ON FUNCTION public.pocket_root_guid() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mgc_root_guid() FROM PUBLIC;
 
 NOTIFY pgrst, 'reload schema';
 
@@ -212,12 +212,12 @@ NOTIFY pgrst, 'reload schema';
 -- Because every helper above is REVOKEd from PUBLIC, leaving them owned by
 -- postgres makes them uncallable by gnucash_owner, and the failure is not
 -- obvious: it surfaces as "permission denied for function
--- pocket_uses_trading_accounts" raised from the middle of pocket_ping(), which
+-- mgc_uses_trading_accounts" raised from the middle of mgc_ping(), which
 -- reads like a bug in ping. Making gnucash_owner the owner gives it implicit
 -- EXECUTE and keeps PUBLIC locked out.
-ALTER FUNCTION public.pocket_new_guid(text)              OWNER TO gnucash_owner;
-ALTER FUNCTION public.pocket_neutral_ts(date)            OWNER TO gnucash_owner;
-ALTER FUNCTION public.pocket_assert_unlocked()           OWNER TO gnucash_owner;
-ALTER FUNCTION public.pocket_uses_trading_accounts()     OWNER TO gnucash_owner;
-ALTER FUNCTION public.pocket_trading_account(varchar)    OWNER TO gnucash_owner;
-ALTER FUNCTION public.pocket_root_guid()                 OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_new_guid(text)              OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_neutral_ts(date)            OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_assert_unlocked()           OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_uses_trading_accounts()     OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_trading_account(varchar)    OWNER TO gnucash_owner;
+ALTER FUNCTION public.mgc_root_guid()                 OWNER TO gnucash_owner;

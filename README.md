@@ -1,4 +1,4 @@
-# gnucash-pocket
+# mini-gnucash
 
 A phone client that talks **directly to a GnuCash PostgreSQL book** over a
 private network, via PostgREST. No second copy of your data, no accounts, no
