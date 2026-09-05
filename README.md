@@ -4,8 +4,10 @@ A phone client that talks **directly to a GnuCash PostgreSQL book** over a
 private network, via PostgREST. No second copy of your data, no accounts, no
 server of ours, no sync.
 
-> **Status: early. Read-only so far.** The server side of increment 0 is built
-> and verified; the mobile app is not written yet. The name is a placeholder.
+> **Status: early, and not yet run on a phone.** The server side is built and
+> verified against a clone of a real 400-account book. The app typechecks and
+> builds, but has never been installed or used. Receipt scanning and account
+> creation are not written yet. The name is a placeholder.
 
 GnuCash is the only ledger. There is no local database on the phone, so there is
 nothing to fall out of step and no "mapping" step — a wallet *is* a `BANK`
@@ -62,10 +64,14 @@ useless to anyone who cannot first reach your network.
 Run these against your own book, as the `postgres` superuser, **in order**:
 
 ```
-sql/00_verify.sql          read-only; answers questions the rest depends on
-sql/10_roles_and_grants.sql
-sql/20_helpers.sql
-sql/30_read_rpcs.sql
+sql/00_verify.sql            read-only; answers questions the rest depends on
+sql/10_roles_and_grants.sql  roles, and the owner-side grants
+sql/20_helpers.sql           guid, neutral timestamp, lock check, trading lookup
+sql/30_read_rpcs.sql         ping, chart of accounts
+sql/35_ledger_reads.sql      balances, register
+sql/40_transfer.sql          transfers, including cross-currency
+sql/45_record_transaction.sql  expenses and income
+sql/50_set_split_cleared.sql   the cleared flag
 ```
 
 `00_verify.sql` is not optional reading. Several decisions — whether your book
