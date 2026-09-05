@@ -122,6 +122,7 @@ export default function AccountRegister() {
   }
 
   const currency = register?.commodity ?? 'IDR';
+  const scu = register?.commodity_scu;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -215,10 +216,10 @@ export default function AccountRegister() {
                     style={[styles.rowAmount, r.quantity < 0 ? styles.neg : styles.pos]}
                     numberOfLines={1}
                   >
-                    {formatAmount(r.quantity, currency)}
+                    {formatAmount(r.quantity, currency, scu)}
                   </Text>
                   <Text style={styles.rowBalance} numberOfLines={1}>
-                    {formatAmount(item.balance, currency)}
+                    {formatAmount(item.balance, currency, scu)}
                   </Text>
                 </View>
               </View>

@@ -179,7 +179,7 @@ export default function Accounts() {
                     : mixed
                       ? '--'
                       : value != null
-                        ? formatAmount(value, item.commodity_mnemonic ?? 'IDR')
+                        ? formatAmount(value, item.commodity_mnemonic ?? 'IDR', item.commodity_scu)
                         : '…'}
                 </Text>
               </Pressable>

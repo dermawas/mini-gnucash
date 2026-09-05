@@ -10,7 +10,19 @@ export const CURRENCIES: Record<string, { symbol: string; name: string; locale: 
   MYR: { symbol: 'RM', name: 'Malaysian Ringgit', locale: 'ms-MY' },
   AUD: { symbol: 'A$', name: 'Australian Dollar', locale: 'en-AU' },
   JPY: { symbol: '¥', name: 'Japanese Yen', locale: 'ja-JP' },
+  CNY: { symbol: '¥', name: 'Chinese Yuan', locale: 'zh-CN' },
 };
+
+/**
+ * How many decimals a commodity actually uses, from GnuCash's own
+ * commodity_scu. A book holds far more than currencies: this one has stocks at
+ * scu 1, currencies at 100, gold at 1,000,000 and crypto at 100,000,000.
+ * Guessing 2 would misprint most of them.
+ */
+function decimalsFromScu(scu?: number): number | undefined {
+  if (!scu || scu < 1) return undefined;
+  return Math.max(0, Math.round(Math.log10(scu)));
+}
 
 export function formatCurrency(amount: number, currency: string = 'IDR'): string {
   const config = CURRENCIES[currency] ?? CURRENCIES.IDR;
@@ -21,9 +33,34 @@ export function formatCurrency(amount: number, currency: string = 'IDR'): string
   }).format(amount);
 }
 
-export function formatAmount(amount: number, currency: string = 'IDR'): string {
-  const config = CURRENCIES[currency] ?? CURRENCIES.IDR;
-  return `${config.symbol} ${new Intl.NumberFormat(config.locale).format(amount)}`;
+/**
+ * Format a quantity in its own commodity.
+ *
+ * The old behaviour here fell back to IDR for anything not in the table above,
+ * so a CNY account rendered as "Rp 0" and gold as Rupiah. Borrowing another
+ * currency's symbol is worse than having no symbol: it states something false
+ * about the money. An unrecognised commodity is now labelled with its own
+ * mnemonic instead, which is what GnuCash does for stocks and metals anyway.
+ *
+ * Pass `scu` (the account's commodity_scu, which every RPC returns) to get the
+ * right number of decimals.
+ */
+export function formatAmount(amount: number, currency: string = 'IDR', scu?: number): string {
+  const config = CURRENCIES[currency];
+  const decimals = decimalsFromScu(scu);
+
+  // IDR and JPY are conventionally written without minor units even though
+  // their scu says otherwise, so an explicit scu does not override that.
+  const noMinorUnits = currency === 'IDR' || currency === 'JPY';
+  const opts: Intl.NumberFormatOptions =
+    noMinorUnits
+      ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
+      : decimals !== undefined
+        ? { minimumFractionDigits: decimals, maximumFractionDigits: decimals }
+        : {};
+
+  const n = new Intl.NumberFormat(config?.locale ?? 'en-US', opts).format(amount);
+  return config ? `${config.symbol} ${n}` : `${n} ${currency}`;
 }
 
 export function parseCurrencyInput(input: string): number {
