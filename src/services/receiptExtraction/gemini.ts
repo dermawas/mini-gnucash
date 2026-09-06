@@ -36,15 +36,39 @@ function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
 // Maps a Gemini error response to a short, user-facing message instead of
 // dumping its raw JSON body (which is what the client used to show
 // verbatim in an Alert — see GitHub issue #7).
+//
+// The key check is deliberately NOT keyed on the 400 status. Google reports a
+// structurally invalid key as 400 / INVALID_ARGUMENT, which is the identical
+// status and code a malformed *request* returns — a bad responseSchema, an
+// unsupported generationConfig field. Only `details[].reason` (or the message
+// text) tells them apart, so match on that.
+//
+// This mattered in practice: a PostgREST JWT was once pasted into the Gemini
+// key field, and for three sessions the resulting 400 was read as evidence
+// about the key itself rather than about what was being sent as one. Blaming
+// the key on a bare 400 points the next person at the wrong thing.
+type GeminiErrorBody = {
+  error?: {
+    status?: string;
+    message?: string;
+    details?: { reason?: string }[];
+  };
+};
+
 export function friendlyGeminiError(status: number, errText: string): string {
-  let parsedStatus: string | undefined;
+  let error: GeminiErrorBody['error'];
   try {
-    parsedStatus = JSON.parse(errText)?.error?.status;
+    error = (JSON.parse(errText) as GeminiErrorBody)?.error;
   } catch {
     // not JSON, fall through to the status-code-based mapping below
   }
 
-  if (status === 400 || parsedStatus === 'INVALID_ARGUMENT') {
+  const parsedStatus = error?.status;
+  const keyIsInvalid =
+    error?.details?.some((d) => d?.reason === 'API_KEY_INVALID') === true ||
+    /api key not valid/i.test(error?.message ?? '');
+
+  if (keyIsInvalid) {
     return "Your Gemini API key was rejected. Check it in Receipt Scanning settings.";
   }
   if (status === 401 || status === 403 || parsedStatus === 'PERMISSION_DENIED') {
@@ -58,6 +82,11 @@ export function friendlyGeminiError(status: number, errText: string): string {
   }
   if (status >= 500) {
     return "The AI scanner is temporarily unavailable. Please try again in a moment.";
+  }
+  // A 400 that is not about the key is the app's fault, not the user's. Say so,
+  // so nobody re-enters a key that was fine.
+  if (status === 400 || parsedStatus === 'INVALID_ARGUMENT') {
+    return "The AI scanner rejected the request — that's a bug in this app, not your key. Enter this receipt manually for now.";
   }
   return "Couldn't read this receipt. Please try again or enter it manually.";
 }
