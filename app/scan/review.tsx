@@ -11,7 +11,10 @@
 //
 // Everything the AI produced is a PROPOSAL. Nothing is written until the save
 // button is pressed, no line is saved without an account the user can see, and
-// `suggested_category` only ranks accounts -- it is never stored. The
+// `suggested_category` only ranks accounts -- it is never stored. What IS
+// stored, on this device only, is which account you picked for a merchant, so
+// the next scan of the same shop proposes what you meant rather than whatever
+// phrase the model produced that run. See merchantMemory.ts. The
 // arithmetic that has to balance is done by allocate.ts and then by the RPC,
 // never by the model.
 
@@ -31,6 +34,7 @@ import { callRpc, markInFlight, clearInFlight, type Account } from '../../src/se
 import { extractReceipt, type ReceiptScan } from '../../src/services/receiptExtraction';
 import { getAiKey, getAiModel } from '../../src/services/aiKey';
 import { matchLine } from '../../src/services/accountMatch';
+import { loadMemory, recall, remember } from '../../src/services/merchantMemory';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { formatAmount, roundingUnit } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
@@ -42,6 +46,12 @@ type Line = {
   accountGuid: string | null;
   /** True while the account is the matcher's proposal, not a user choice. */
   proposed: boolean;
+  /**
+   * Where a proposal came from, so the screen can say. "You chose this here
+   * before" and "the words on the receipt looked like this" deserve different
+   * amounts of trust, and the second is the one that has been wrong.
+   */
+  basis: 'tokens' | 'item' | 'merchant' | null;
 };
 
 /** The receipt's own date, or today when it is missing or unparseable. */
@@ -173,16 +183,23 @@ export default function ScanReview() {
     }
 
     const candidates = postable(EXPENSE_TYPES);
+    const memory = await loadMemory();
     setScan(result);
     setLines(
       result.items.map((item, i) => {
-        const match = matchLine(item, candidates, currency);
+        const match = matchLine(
+          item,
+          candidates,
+          currency,
+          recall(memory, result.merchant ?? '', item.name),
+        );
         return {
           key: `r${i}`,
           name: item.name,
           amount: item.allocated_price,
           accountGuid: match?.account.guid ?? null,
           proposed: !!match,
+          basis: match?.basis ?? null,
         };
       }),
     );
@@ -227,6 +244,15 @@ export default function ScanReview() {
     setSaving(false);
 
     if (result.ok) {
+      // After the write, never before: a save that failed may have been a
+      // correction in progress. `proposed` is false only where the user opened
+      // the picker and chose, which is the only thing worth learning from.
+      await remember(
+        label,
+        payable
+          .filter((l) => l.accountGuid)
+          .map((l) => ({ name: l.name, accountGuid: l.accountGuid as string, chosen: !l.proposed })),
+      );
       Alert.alert(
         result.data.status === 'already_recorded' ? 'Already recorded' : 'Recorded',
         result.data.status === 'already_recorded'
@@ -356,7 +382,13 @@ export default function ScanReview() {
                         </Text>
                       </Pressable>
                       {lineAcct && line.proposed ? (
-                        <Text style={styles.proposed}>Suggested — check it before saving.</Text>
+                        <Text style={styles.proposed}>
+                          {line.basis === 'item'
+                            ? 'You chose this for this item here before.'
+                            : line.basis === 'merchant'
+                              ? 'You have always chosen this account at this merchant.'
+                              : 'Suggested from the receipt text — check it before saving.'}
+                        </Text>
                       ) : null}
                       {!lineAcct ? (
                         <Text style={styles.unmatched}>
@@ -451,7 +483,8 @@ export default function ScanReview() {
           if (picker?.kind === 'line') {
             const key = picker.key;
             setLines((prev) =>
-              prev.map((l) => (l.key === key ? { ...l, accountGuid: a.guid, proposed: false } : l)),
+              prev.map((l) =>
+                (l.key === key ? { ...l, accountGuid: a.guid, proposed: false, basis: null } : l)),
             );
           }
           setPicker(null);

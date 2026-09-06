@@ -16,6 +16,7 @@ import {
 } from '../../src/services/crashReporting';
 import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } from '../../src/services/aiKey';
 import { DEFAULT_GEMINI_MODEL } from '../../src/services/receiptExtraction';
+import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
 import { theme } from '../../src/constants/theme';
 
 export default function Settings() {
@@ -36,12 +37,17 @@ export default function Settings() {
   // exposing it is to be able to read what is in force before changing it.
   const [savedModel, setSavedModel] = useState<string>(DEFAULT_GEMINI_MODEL);
   const [modelDraft, setModelDraft] = useState('');
+  // How many merchants this phone has learned an account for. A count only --
+  // the names are never shown here, because a merchant list is a spending
+  // history and this screen is not where that belongs.
+  const [merchants, setMerchants] = useState(0);
 
   useEffect(() => {
     loadCredentials().then((c) => setUrl(c?.url ?? null));
     loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
     getAiKey().then(setSavedKey);
     getAiModel().then(setSavedModel);
+    loadMemory().then((m) => setMerchants(Object.keys(m).length));
   }, []);
 
   async function handleDisconnect() {
@@ -186,6 +192,24 @@ export default function Settings() {
               trackColor={{ true: theme.accent, false: theme.hairline }}
             />
           </View>
+
+          <Text style={styles.hint}>
+            {merchants > 0
+              ? `Remembered which account you chose at ${merchants} merchant${merchants === 1 ? '' : 's'}. Kept on this phone, never written to your book and never sent anywhere.`
+              : 'Nothing remembered yet. Choosing an account for a scanned line teaches this phone what you meant, so the next receipt from that shop proposes the same one.'}
+          </Text>
+          {merchants > 0 ? (
+            <Pressable
+              style={styles.btnGhost}
+              onPress={async () => {
+                await forgetAll();
+                setMerchants(0);
+                Alert.alert('Forgotten', 'Scans will propose accounts from the receipt text alone again.');
+              }}
+            >
+              <Text style={styles.btnGhostText}>Forget merchants</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={styles.section}>What this app will not do</Text>

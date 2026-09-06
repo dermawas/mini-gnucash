@@ -22,8 +22,15 @@
 //   3. A weak match is no match. Below the threshold this returns null and the
 //      user picks. Proposing a plausible-looking wrong account is worse than
 //      proposing nothing, because it invites a confirming tap.
+//
+//   4. What the user chose before beats anything scored here. The tokens can
+//      only reach a leaf via `suggested_category` -- a chart of accounts has
+//      no word for `Donat` -- and that phrase changes between runs on one
+//      receipt. `merchantMemory.ts` supplies the recollection; this file stays
+//      pure, and takes it as an argument so it is still reproducible offline.
 
 import type { Account } from './api';
+import type { Remembered } from './merchantMemory';
 
 export type Match = {
   account: Account;
@@ -35,6 +42,12 @@ export type Match = {
    * between equal scores -- see the comparison in matchLine.
    */
   leafCoverage: number;
+  /**
+   * Where the proposal came from. `tokens` is the scoring below; `item` and
+   * `merchant` mean it was recalled from what the user chose before, which
+   * outranks any score -- see matchLine.
+   */
+  basis: 'tokens' | 'item' | 'merchant';
 };
 
 // Tokens carrying no discriminating power in any book. Path segments shared by
@@ -126,17 +139,35 @@ export function scoreAccount(
  * threshold.
  *
  * `candidates` should already be the postable, non-hidden set. Commodity
- * filtering happens here so no caller can forget it.
+ * filtering happens here so no caller can forget it -- including for a
+ * remembered account, which is why memory is resolved here rather than by the
+ * caller. An account confirmed months ago may since have been made a
+ * placeholder, hidden, or re-denominated.
+ *
+ * **A memory outranks a score.** The tokens can only ever match on the AI's
+ * `suggested_category`, because no chart of accounts contains the words a till
+ * receipt prints, and that phrase is not stable between runs. What the user
+ * chose for this merchant is. See merchantMemory.ts.
  */
 export function matchLine(
   params: { name: string; suggested_category: string },
   candidates: Account[],
   fundingCommodity: string | null,
+  remembered: Remembered | null = null,
 ): Match | null {
   const eligible = candidates.filter(
     (a) => !fundingCommodity || a.commodity_mnemonic === fundingCommodity,
   );
   if (eligible.length === 0) return null;
+
+  if (remembered) {
+    const account = eligible.find((a) => a.guid === remembered.guid);
+    // Silently falling through to the tokens is right when it is gone: the
+    // proposal is a proposal either way, and the picker is one tap away.
+    if (account) {
+      return { account, score: Infinity, matched: [], leafCoverage: 1, basis: remembered.basis };
+    }
+  }
 
   // Sorted before scoring so ties always resolve the same way across runs.
   const ordered = [...eligible].sort((a, b) => a.full_path.localeCompare(b.full_path));
@@ -148,7 +179,7 @@ export function matchLine(
   for (const account of ordered) {
     const { score, matched, leafCoverage } = scoreAccount(queryTokens, account, ignore);
     if (score < MIN_SCORE) continue;
-    const candidate: Match = { account, score, matched, leafCoverage };
+    const candidate: Match = { account, score, matched, leafCoverage, basis: 'tokens' };
     if (!best || isBetter(candidate, best)) best = candidate;
   }
   return best;
