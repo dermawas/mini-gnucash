@@ -4,10 +4,12 @@ A phone client that talks **directly to a GnuCash PostgreSQL book** over a
 private network, via PostgREST. No second copy of your data, no accounts, no
 server of ours, no sync.
 
-> **Status: early, and not yet run on a phone.** The server side is built and
-> verified against a clone of a real 400-account book. The app typechecks and
-> builds, but has never been installed or used. Receipt scanning and account
-> creation are not written yet. The name is a placeholder.
+> **Status: running on a phone, against a clone — never yet against a real
+> book.** The server side is built and verified; the app is installed on a
+> Galaxy S10 and has browsed real balances and recorded scanned receipts as
+> multi-split transactions on a clone of a 400-account book. Six of eight
+> increments are done — account creation is not written yet, and **nothing has
+> been written to a production book.** The name is a placeholder.
 
 GnuCash is the only ledger. There is no local database on the phone, so there is
 nothing to fall out of step and no "mapping" step — a wallet *is* a `BANK`
