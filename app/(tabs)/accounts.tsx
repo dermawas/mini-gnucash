@@ -33,9 +33,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import Icon from '@react-native-vector-icons/material-design-icons';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts } from '../../src/store/accountStore';
@@ -114,6 +115,27 @@ export default function Accounts() {
 
   const showMoney = connState === 'online' || connState === 'locked';
 
+  // Android's hardware back knows nothing about `trail`, because drilling into
+  // the tree is local state and not a route push. Without this, back from three
+  // levels deep skips the whole tree and leaves the app, which reads as a
+  // crash rather than as navigation -- and it is why the on-screen back link
+  // had to be made a full-width row in the first place.
+  //
+  // Only claim the event when there is somewhere to go back TO. At the top of
+  // the tree, return false and let Android do the normal thing for a tab root.
+  // Bound to focus, or this screen would keep swallowing back presses from the
+  // Settings tab.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (trail.length === 0) return false;
+        setTrail((t) => t.slice(0, -1));
+        return true;
+      });
+      return () => sub.remove();
+    }, [trail.length]),
+  );
+
   function open(a: Account) {
     const hasChildren = (childrenOf.get(a.guid)?.length ?? 0) > 0;
     // A placeholder always drills, never opens a register -- rule 2 above.
@@ -154,22 +176,22 @@ export default function Accounts() {
           <View style={styles.actionsInner}>
             <Pressable style={styles.action} onPress={() => router.push('/entry/spend')}>
               <Icon name="minus-circle-outline" size={18} color={theme.accent} />
-              <Text style={styles.actionText}>Spend</Text>
+              <Text style={styles.actionText} numberOfLines={1}>Spend</Text>
             </Pressable>
             <Pressable
               style={styles.action}
               onPress={() => router.push('/entry/spend?direction=inflow')}
             >
               <Icon name="plus-circle-outline" size={18} color={theme.accent} />
-              <Text style={styles.actionText}>Income</Text>
+              <Text style={styles.actionText} numberOfLines={1}>Income</Text>
             </Pressable>
             <Pressable style={styles.action} onPress={() => router.push('/entry/transfer')}>
               <Icon name="swap-horizontal" size={18} color={theme.accent} />
-              <Text style={styles.actionText}>Transfer</Text>
+              <Text style={styles.actionText} numberOfLines={1}>Transfer</Text>
             </Pressable>
             <Pressable style={styles.action} onPress={() => router.push('/scan/review')}>
               <Icon name="camera-outline" size={18} color={theme.accent} />
-              <Text style={styles.actionText}>Scan</Text>
+              <Text style={styles.actionText} numberOfLines={1}>Scan</Text>
             </Pressable>
           </View>
         </View>
@@ -274,19 +296,33 @@ const styles = StyleSheet.create({
   },
   upPressed: { opacity: 0.6 },
   upText: { color: theme.accent, fontSize: 16, fontWeight: '600', marginLeft: 4, flex: 1 },
-  actions: { paddingHorizontal: 16, paddingBottom: 14 },
+  actions: { paddingHorizontal: 10, paddingBottom: 14 },
   actionsInner: { flexDirection: 'row', justifyContent: 'space-between' },
   action: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    marginHorizontal: 4,
+    // Without this a flex child refuses to shrink below its content width.
+    minWidth: 0,
+    marginHorizontal: 3,
     paddingVertical: 11,
     borderRadius: 10,
     backgroundColor: theme.surface,
   },
-  actionText: { color: theme.accent, fontSize: 13, fontWeight: '600', marginLeft: 6 },
+  // flexShrink + numberOfLines are a guard, not decoration. At font_scale 1.3
+  // "Transfer" already fills its box to the pixel and its icon is the first
+  // thing the layout compresses; a fifth button or a longer label would clip
+  // it, which is bug 2 all over again. Let the label shrink and stay on one
+  // line instead of pushing the row wider than the screen.
+  actionText: {
+    // 12, not 13. At font_scale 1.3 the four labels need 228px for "Transfer"
+    // and the box gives 165 for its text -- icon 48 + gap 15 + text 165 filled
+    // the button exactly, with nothing spare. A point off the label, plus the
+    // padding reclaimed above, buys real slack instead of the zero it had.
+    color: theme.accent, fontSize: 12, fontWeight: '600', marginLeft: 5,
+    flexShrink: 1,
+  },
   cacheNote: {
     color: theme.amber, fontSize: 12, lineHeight: 17,
     paddingHorizontal: 20, paddingBottom: 12,
