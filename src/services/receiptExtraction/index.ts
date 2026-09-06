@@ -122,9 +122,31 @@ export async function extractReceipt(params: {
   const rawSubtotalAlreadyMatches =
     Math.abs(rawSubtotal - printedTotalForCheck) <= Math.max(1, rawSubtotal * 0.02);
 
+  // Negative lines are per-item discounts printed on their own row. The prompt
+  // asks for them folded into the item's price, but a dense receipt gets that
+  // wrong often enough that this cannot be left to it: a Diamond supermarket
+  // receipt of 94 lines came back with eight of them.
+  //
+  // They cannot be written as splits -- mgc_record_transaction rejects
+  // amount <= 0 -- and dropping them silently is worse than refusing, because
+  // the funding split is derived from the lines, so the ledger would balance
+  // perfectly at a total nobody agreed to. Fold them into the receipt-level
+  // discount instead, where the allocator already knows how to spread an
+  // amount proportionally. The total is preserved exactly:
+  //
+  //   sum(kept) - sum(|negatives|) == sum(all item prices)
+  //
+  // What is lost is which item earned the discount; it is spread across all of
+  // them. The total being right matters more, and the review screen shows every
+  // line before anything is written.
+  const kept = extraction.items.filter((i) => i.price >= 0);
+  const lineDiscount = extraction.items
+    .filter((i) => i.price < 0)
+    .reduce((sum, i) => sum - i.price, 0);
+
   const allocation = allocateAmounts(
-    extraction.items,
-    rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0,
+    kept,
+    lineDiscount + (rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0),
     rawSubtotalAlreadyMatches ? 0 : extraction.receipt_tax ?? 0,
     roundingUnit,
   );
@@ -139,7 +161,8 @@ export async function extractReceipt(params: {
     date: extraction.date,
     currency: extraction.currency,
     items: allocation.allocated,
-    receipt_discount: rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0,
+    receipt_discount:
+      lineDiscount + (rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0),
     receipt_tax: rawSubtotalAlreadyMatches ? 0 : extraction.receipt_tax ?? 0,
     computed_total: allocation.computedTotal,
     printed_total: printedTotal,

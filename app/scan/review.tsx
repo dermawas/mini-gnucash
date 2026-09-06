@@ -84,6 +84,18 @@ export default function ScanReview() {
   // out of the payload: a zero split would add nothing to the double entry
   // either way.
   const payable = lines.filter((l) => l.amount > 0);
+
+  // The number on this screen and the number that reaches the ledger must be
+  // the same one. They diverged once: the filter above, written for a Rp 0
+  // paper bag, also dropped the negative discount lines a supermarket receipt
+  // carries, so the screen showed a discounted total while the payload held the
+  // undiscounted one -- and nothing complained, because mgc_record_transaction
+  // derives the funding split from the lines it is given and balanced happily
+  // at the wrong figure. Negative lines are folded into the discount upstream
+  // now, so this should never fire; it exists so that if it ever does, it stops
+  // the write instead of quietly changing the amount.
+  const payableTotal = payable.reduce((sum, l) => sum + l.amount, 0);
+  const totalsAgree = Math.abs(total - payableTotal) < 1e-9;
   const unassigned = payable.filter((l) => !l.accountGuid).length;
 
   // The receipt's currency against the funding account's. Not a warning to
@@ -93,7 +105,8 @@ export default function ScanReview() {
   const currencyMismatch =
     !!scan && !!currency && !!scan.currency && scan.currency.toUpperCase() !== currency;
 
-  const ready = !!account && payable.length > 0 && unassigned === 0 && !saving && !currencyMismatch;
+  const ready =
+    !!account && payable.length > 0 && unassigned === 0 && totalsAgree && !saving && !currencyMismatch;
 
   async function runScan(source: 'camera' | 'library') {
     if (!account) return;
@@ -182,6 +195,14 @@ export default function ScanReview() {
     const { date } = postDate(scan.date);
     const requestId = generateTransactionId();
     const label = scan.merchant?.trim() || 'Receipt';
+    // The discount is spread across the lines, so no split records it and the
+    // figure would otherwise exist nowhere in the book. Descriptions are the
+    // only transaction-level free text this RPC takes, and they are searchable
+    // in GnuCash desktop and in SQL -- the same place the item names live.
+    const description =
+      scan.receipt_discount > 0
+        ? `${label} (disc ${formatAmount(scan.receipt_discount, currency ?? 'IDR', scu)})`
+        : label;
     await markInFlight(requestId, label);
 
     const result = await callRpc<{ status: string; tx_guid: string; line_count: number }>(
@@ -196,7 +217,7 @@ export default function ScanReview() {
           memo: l.name.trim(),
         })),
         p_post_date: date,
-        p_description: label,
+        p_description: description,
       },
     );
 
@@ -353,6 +374,21 @@ export default function ScanReview() {
               );
             })}
 
+            {scan.receipt_discount > 0 ? (
+              <Text style={styles.note}>
+                Discount of {formatAmount(scan.receipt_discount, currency ?? 'IDR', scu)} spread
+                across the lines above, so each one shows what it actually cost. The total is
+                after it.
+              </Text>
+            ) : null}
+
+            {scan.receipt_tax > 0 ? (
+              <Text style={styles.note}>
+                Tax of {formatAmount(scan.receipt_tax, currency ?? 'IDR', scu)} added and spread
+                across the lines above.
+              </Text>
+            ) : null}
+
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalValue}>
@@ -364,6 +400,14 @@ export default function ScanReview() {
               <Text style={styles.note}>
                 {unassigned} line{unassigned === 1 ? '' : 's'} still {unassigned === 1 ? 'needs' : 'need'} an
                 account.
+              </Text>
+            ) : null}
+
+            {!totalsAgree ? (
+              <Text style={styles.warn}>
+                These lines add up to {formatAmount(total, currency ?? 'IDR', scu)}, but only{' '}
+                {formatAmount(payableTotal, currency ?? 'IDR', scu)} of it can be written. Refusing
+                to record a total you have not seen — please enter this one in GnuCash desktop.
               </Text>
             ) : null}
 
