@@ -24,6 +24,22 @@ function decimalsFromScu(scu?: number): number | undefined {
   return Math.max(0, Math.round(Math.log10(scu)));
 }
 
+/**
+ * Denominator to round money to for a commodity: 1 for whole units, 100 for
+ * two decimals, and so on.
+ *
+ * This deliberately follows what `formatAmount` DISPLAYS rather than the raw
+ * commodity_scu. IDR and JPY carry scu 100 in the book but are written without
+ * minor units, so allocating a discount at scu precision would store
+ * Rp 29.688,89 while every screen showed Rp 29.689 -- a ledger disagreeing
+ * with its own display, which is the failure this project exists to avoid.
+ */
+export function roundingUnit(currency: string = 'IDR', scu?: number): number {
+  if (currency === 'IDR' || currency === 'JPY') return 1;
+  const decimals = decimalsFromScu(scu);
+  return decimals === undefined ? 100 : 10 ** decimals;
+}
+
 export function formatCurrency(amount: number, currency: string = 'IDR'): string {
   const config = CURRENCIES[currency] ?? CURRENCIES.IDR;
   return new Intl.NumberFormat(config.locale, {

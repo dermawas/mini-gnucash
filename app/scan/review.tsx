@@ -32,7 +32,7 @@ import { extractReceipt, type ReceiptScan } from '../../src/services/receiptExtr
 import { getAiKey, getAiModel } from '../../src/services/aiKey';
 import { matchLine } from '../../src/services/accountMatch';
 import { generateTransactionId } from '../../src/utils/idempotency';
-import { formatAmount } from '../../src/utils/currency';
+import { formatAmount, roundingUnit } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
 
 type Line = {
@@ -76,7 +76,15 @@ export default function ScanReview() {
   const scu = account?.commodity_scu ?? 100;
 
   const total = useMemo(() => lines.reduce((s, l) => s + l.amount, 0), [lines]);
-  const unassigned = lines.filter((l) => !l.accountGuid).length;
+  // A zero line is real information off the receipt -- a free paper bag is
+  // genuinely printed there -- but it is not a split. mgc_record_transaction
+  // rejects any amount <= 0 on purpose ("amounts are always positive; the
+  // direction decides the sign"), and that guard is worth keeping for every
+  // caller rather than loosening for this one. So show the line, and leave it
+  // out of the payload: a zero split would add nothing to the double entry
+  // either way.
+  const payable = lines.filter((l) => l.amount > 0);
+  const unassigned = payable.filter((l) => !l.accountGuid).length;
 
   // The receipt's currency against the funding account's. Not a warning to
   // click past: mgc_record_transaction refuses a cross-currency entry, so
@@ -85,7 +93,7 @@ export default function ScanReview() {
   const currencyMismatch =
     !!scan && !!currency && !!scan.currency && scan.currency.toUpperCase() !== currency;
 
-  const ready = !!account && lines.length > 0 && unassigned === 0 && !saving && !currencyMismatch;
+  const ready = !!account && payable.length > 0 && unassigned === 0 && !saving && !currencyMismatch;
 
   async function runScan(source: 'camera' | 'library') {
     if (!account) return;
@@ -125,6 +133,9 @@ export default function ScanReview() {
       mimeType: asset.mimeType ?? 'image/jpeg',
       apiKey,
       model: await getAiModel(),
+      // The funding account is chosen before the photo, so its precision is
+      // always known by the time allocation runs.
+      roundingUnit: roundingUnit(currency ?? 'IDR', scu),
     });
     setScanning(false);
 
@@ -179,7 +190,7 @@ export default function ScanReview() {
         p_request_id: requestId,
         p_account_guid: account.guid,
         p_direction: 'outflow',
-        p_splits: lines.map((l) => ({
+        p_splits: payable.map((l) => ({
           account_guid: l.accountGuid,
           amount: l.amount,
           memo: l.name.trim(),
@@ -310,25 +321,34 @@ export default function ScanReview() {
                       {formatAmount(line.amount, currency ?? 'IDR', scu)}
                     </Text>
                   </View>
-                  <Pressable
-                    style={styles.lineSelector}
-                    onPress={() => setPicker({ kind: 'line', key: line.key })}
-                  >
-                    <Text
-                      style={lineAcct ? styles.selectorValue : styles.selectorPlaceholder}
-                      numberOfLines={2}
-                    >
-                      {lineAcct ? lineAcct.full_path : 'Choose an account'}
+                  {line.amount > 0 ? (
+                    <>
+                      <Pressable
+                        style={styles.lineSelector}
+                        onPress={() => setPicker({ kind: 'line', key: line.key })}
+                      >
+                        <Text
+                          style={lineAcct ? styles.selectorValue : styles.selectorPlaceholder}
+                          numberOfLines={2}
+                        >
+                          {lineAcct ? lineAcct.full_path : 'Choose an account'}
+                        </Text>
+                      </Pressable>
+                      {lineAcct && line.proposed ? (
+                        <Text style={styles.proposed}>Suggested — check it before saving.</Text>
+                      ) : null}
+                      {!lineAcct ? (
+                        <Text style={styles.unmatched}>
+                          No confident match. Pick one — this app cannot create accounts yet.
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : (
+                    <Text style={styles.proposed}>
+                      This line comes to nothing — free on the receipt, or discounted away — so
+                      it needs no account and is not written to the ledger.
                     </Text>
-                  </Pressable>
-                  {lineAcct && line.proposed ? (
-                    <Text style={styles.proposed}>Suggested — check it before saving.</Text>
-                  ) : null}
-                  {!lineAcct ? (
-                    <Text style={styles.unmatched}>
-                      No confident match. Pick one — this app cannot create accounts yet.
-                    </Text>
-                  ) : null}
+                  )}
                 </View>
               );
             })}

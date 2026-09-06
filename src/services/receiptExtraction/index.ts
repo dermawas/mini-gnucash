@@ -57,8 +57,14 @@ export async function extractReceipt(params: {
   mimeType: string;
   apiKey: string;
   model?: string;
+  /**
+   * Denominator allocation rounds to, from `roundingUnit(currency, scu)`.
+   * Passing it is what keeps a discount on a two-decimal currency from being
+   * spread in whole units, and what keeps IDR whole.
+   */
+  roundingUnit?: number;
 }): Promise<ExtractReceiptResult> {
-  const { base64Image, mimeType, apiKey } = params;
+  const { base64Image, mimeType, apiKey, roundingUnit } = params;
   const model = params.model?.trim() || DEFAULT_GEMINI_MODEL;
 
   if (!apiKey) {
@@ -120,6 +126,7 @@ export async function extractReceipt(params: {
     extraction.items,
     rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0,
     rawSubtotalAlreadyMatches ? 0 : extraction.receipt_tax ?? 0,
+    roundingUnit,
   );
 
   const printedTotal = extraction.printed_total ?? 0;
