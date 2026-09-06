@@ -27,6 +27,15 @@ export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 // the one place this app talks to anything that is not your own server.
 const GEMINI_FETCH_TIMEOUT_MS = 60_000;
 
+// Backoff for 503 / UNAVAILABLE. A single 1.5s retry was not enough: during a
+// real spike on 2026-09-06, gemini-flash-latest returned 503 to both the first
+// call and that retry, repeatedly, over several minutes -- while the very same
+// request succeeded from a desktop moments later. The user saw "the AI scanner
+// is busy" for something that would have gone through on a slightly later try.
+// Two retries, the second much later, ride out a spike of that shape without
+// making a failed scan feel hung.
+const RETRY_DELAYS_MS = [1_500, 6_000];
+
 function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEMINI_FETCH_TIMEOUT_MS);
@@ -131,11 +140,12 @@ export async function callGemini(
   try {
     response = await fetchGemini(apiKey, model, base64Image, mimeType);
 
-    // Gemini's own 503 message says spikes are "usually temporary" — a
-    // single short retry resolves a meaningful share of these without
-    // ever surfacing an error to the user at all.
-    if (response.status === 503) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Gemini's own 503 message says spikes are "usually temporary", and most
+    // do clear without the user ever seeing an error. Give up only after the
+    // whole ladder, not on the first disappointment.
+    for (const delay of RETRY_DELAYS_MS) {
+      if (response.status !== 503) break;
+      await new Promise((resolve) => setTimeout(resolve, delay));
       response = await fetchGemini(apiKey, model, base64Image, mimeType);
     }
   } catch (err: any) {

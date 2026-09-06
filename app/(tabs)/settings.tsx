@@ -14,7 +14,8 @@ import { clearCredentials, clearAccountCache, loadCredentials } from '../../src/
 import {
   isCrashReportingEnabled, setCrashReportingEnabled, loadCrashReportingPreference,
 } from '../../src/services/crashReporting';
-import { getAiKey, saveAiKey, clearAiKey, maskKey } from '../../src/services/aiKey';
+import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } from '../../src/services/aiKey';
+import { DEFAULT_GEMINI_MODEL } from '../../src/services/receiptExtraction';
 import { theme } from '../../src/constants/theme';
 
 export default function Settings() {
@@ -31,11 +32,16 @@ export default function Settings() {
   // only ever what the user is typing right now.
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [keyDraft, setKeyDraft] = useState('');
+  // The model is shown in full -- it is not a secret, and the whole point of
+  // exposing it is to be able to read what is in force before changing it.
+  const [savedModel, setSavedModel] = useState<string>(DEFAULT_GEMINI_MODEL);
+  const [modelDraft, setModelDraft] = useState('');
 
   useEffect(() => {
     loadCredentials().then((c) => setUrl(c?.url ?? null));
     loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
     getAiKey().then(setSavedKey);
+    getAiModel().then(setSavedModel);
   }, []);
 
   async function handleDisconnect() {
@@ -95,6 +101,7 @@ export default function Settings() {
               No key saved. Scanning is off until you add one.
             </Text>
           )}
+          <Row label="Model" value={savedModel} />
           <Text style={styles.prose}>
             Scanning uses a Gemini key you obtain yourself, billed to your own Google account. It is
             kept in this phone's keystore and sent only to Google, never to your ledger and never to
@@ -122,12 +129,40 @@ export default function Settings() {
           >
             <Text style={styles.btnGhostText}>Save key</Text>
           </Pressable>
+          <Text style={styles.prose}>
+            The model only needs changing if Google retires this one, or if it is busy for long
+            enough to be annoying -- a scan that keeps saying the scanner is busy will often go
+            through on a different model. Leave the box empty and save to go back to{' '}
+            {DEFAULT_GEMINI_MODEL}.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={modelDraft}
+            onChangeText={setModelDraft}
+            placeholder={savedModel}
+            placeholderTextColor={theme.inkFaint}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable
+            style={styles.btnGhost}
+            onPress={async () => {
+              await saveAiModel(modelDraft);
+              const now = await getAiModel();
+              setSavedModel(now);
+              setModelDraft('');
+              Alert.alert('Model saved', `Scans will use ${now}.`);
+            }}
+          >
+            <Text style={styles.btnGhostText}>Save model</Text>
+          </Pressable>
           {savedKey ? (
             <Pressable
               style={styles.btnGhost}
               onPress={async () => {
                 await clearAiKey();
                 setSavedKey(null);
+                setSavedModel(DEFAULT_GEMINI_MODEL);
                 Alert.alert('Key removed', 'Receipt scanning is off until you add one again.');
               }}
             >

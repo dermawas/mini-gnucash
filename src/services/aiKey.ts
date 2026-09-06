@@ -39,6 +39,20 @@ export async function saveAiKey(apiKey: string, model?: string): Promise<void> {
   }
 }
 
+// Saved separately from the key, because the reason to change it -- a model
+// that is overloaded, renamed or retired -- has nothing to do with the key
+// being wrong. An empty string clears the override and falls back to
+// DEFAULT_GEMINI_MODEL, so there is always a way back to the shipped default
+// without reinstalling.
+export async function saveAiModel(model: string): Promise<void> {
+  const trimmed = model.trim();
+  if (trimmed) {
+    await SecureStore.setItemAsync(AI_MODEL, trimmed);
+  } else {
+    await SecureStore.deleteItemAsync(AI_MODEL);
+  }
+}
+
 export async function clearAiKey(): Promise<void> {
   await SecureStore.deleteItemAsync(AI_API_KEY);
   await SecureStore.deleteItemAsync(AI_MODEL);
