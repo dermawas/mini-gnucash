@@ -44,6 +44,7 @@ import { useConnection } from '../../src/store/connectionStore';
 import { getBalances, type Balance } from '../../src/services/api';
 import { formatAmount } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
+import { usePrivacy, maskIfHidden } from '../../src/store/privacyStore';
 import type { Account } from '../../src/services/api';
 
 export default function Accounts() {
@@ -62,6 +63,9 @@ export default function Accounts() {
   const [refreshing, setRefreshing] = useState(false);
   /** Ancestors of the level currently on screen. Empty means the top. */
   const [trail, setTrail] = useState<Account[]>([]);
+  const hidden = usePrivacy((s) => s.hidden);
+  const toggleHidden = usePrivacy((s) => s.toggle);
+  const loadPrivacy = usePrivacy((s) => s.load);
 
   const loadBalances = useCallback(async () => {
     const result = await getBalances();
@@ -88,6 +92,7 @@ export default function Accounts() {
   }, [refreshConn, loadAccounts, loadBalances]);
 
   useEffect(() => {
+    loadPrivacy();
     refreshAll();
     // Once on mount. Re-running on every connection change would hammer the
     // server while a flaky VPN flaps.
@@ -150,9 +155,23 @@ export default function Accounts() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.h1} numberOfLines={1}>
-          {current ? current.name : 'Accounts'}
-        </Text>
+        <View style={styles.headTop}>
+          <Text style={[styles.h1, styles.headTitle]} numberOfLines={1}>
+            {current ? current.name : 'Accounts'}
+          </Text>
+          <Pressable
+            onPress={toggleHidden}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={hidden ? 'Show balances' : 'Hide balances'}
+          >
+            <Icon
+              name={hidden ? 'eye-off-outline' : 'eye-outline'}
+              size={22}
+              color={theme.inkSoft}
+            />
+          </Pressable>
+        </View>
         {current ? (
           <Text style={styles.crumb} numberOfLines={1}>
             {trail.map((t) => t.name).join(' › ')}
@@ -249,7 +268,7 @@ export default function Accounts() {
                       : mixed
                         ? '--'
                         : value != null
-                          ? formatAmount(value, item.commodity_mnemonic ?? 'IDR', item.commodity_scu)
+                          ? maskIfHidden(formatAmount(value, item.commodity_mnemonic ?? 'IDR', item.commodity_scu), hidden)
                           : '…'}
                   </Text>
                   {kids > 0 ? (
@@ -277,6 +296,8 @@ export default function Accounts() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
+  headTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headTitle: { flex: 1, marginRight: 12 },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
   crumb: { color: theme.inkFaint, fontSize: 11, marginTop: 4 },

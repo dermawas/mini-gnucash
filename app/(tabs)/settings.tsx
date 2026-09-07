@@ -17,6 +17,10 @@ import {
 import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } from '../../src/services/aiKey';
 import { DEFAULT_GEMINI_MODEL } from '../../src/services/receiptExtraction';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
+import {
+  listInstances, getActiveId, activate, forgetInstance, adoptCurrentCredentials,
+  type Instance,
+} from '../../src/services/instances';
 import { theme } from '../../src/constants/theme';
 
 export default function Settings() {
@@ -41,9 +45,23 @@ export default function Settings() {
   // the names are never shown here, because a merchant list is a spending
   // history and this screen is not where that belongs.
   const [merchants, setMerchants] = useState(0);
+  const [instances, setInstances] = useState<Instance[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     loadCredentials().then((c) => setUrl(c?.url ?? null));
+    // Adopts a connection made before this list existed, so the switcher is
+    // not empty on an install that predates it.
+    //
+    // Sequenced, not parallel: adopting WRITES the active id, so reading it
+    // concurrently raced and usually lost -- the active ledger then rendered
+    // as "Switch" rather than "In use", which reads as though the app is
+    // connected to something it is not.
+    adoptCurrentCredentials().then(async (list) => {
+      setInstances(list);
+      setActiveId(await getActiveId());
+    });
     loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
     getAiKey().then(setSavedKey);
     getAiModel().then(setSavedModel);
@@ -97,6 +115,92 @@ export default function Settings() {
         <Pressable style={styles.btnGhost} onPress={async () => { await conn.refresh(); await loadAccounts(); }}>
           <Text style={styles.btnGhostText}>Refresh accounts</Text>
         </Pressable>
+
+        {instances.length > 0 ? (
+          <>
+            <Text style={styles.section}>Ledgers on this phone</Text>
+            <View style={styles.card}>
+              {instances.map((i) => {
+                const active = i.id === activeId;
+                return (
+                  <Pressable
+                    key={i.id}
+                    style={styles.ledgerRow}
+                    disabled={active || switching}
+                    onPress={async () => {
+                      setSwitching(true);
+                      const ok = await activate(i.id);
+                      if (!ok) {
+                        setSwitching(false);
+                        Alert.alert(
+                          'That token is gone',
+                          `The saved credential for ${i.name} is no longer on this phone. Connect to it again to store a new one.`,
+                        );
+                        return;
+                      }
+                      // The chart of accounts belongs to the ledger that was
+                      // open, not to this one. Keeping it would show the wrong
+                      // book's accounts against the new connection.
+                      await clearAccountCache();
+                      resetAccounts();
+                      conn.reset();
+                      setActiveId(i.id);
+                      setUrl(ok.url);
+                      await conn.refresh();
+                      await loadAccounts();
+                      setSwitching(false);
+                    }}
+                    onLongPress={() => {
+                      Alert.alert(
+                        `Forget ${i.name}?`,
+                        active
+                          ? 'This is the ledger you are connected to. Forgetting it disconnects the app; your GnuCash book is untouched.'
+                          : 'Removes its address and token from this phone. Your GnuCash book is untouched.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Forget',
+                            style: 'destructive',
+                            onPress: async () => {
+                              await forgetInstance(i.id);
+                              setInstances(await listInstances());
+                              setActiveId(await getActiveId());
+                              if (active) {
+                                await clearAccountCache();
+                                resetAccounts();
+                                conn.reset();
+                                router.replace('/connect');
+                              }
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                  >
+                    <View style={styles.ledgerText}>
+                      <Text style={[styles.ledgerName, active ? styles.ledgerNameOn : null]}>
+                        {i.name}
+                      </Text>
+                      <Text style={styles.ledgerUrl}>{i.url}</Text>
+                    </View>
+                    <Text style={styles.ledgerMark}>{active ? 'In use' : 'Switch'}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable
+              style={styles.btnGhost}
+              onPress={() => router.push('/connect?add=1')}
+            >
+              <Text style={styles.btnGhostText}>Add another ledger</Text>
+            </Pressable>
+            <Text style={styles.hint}>
+              A token is signed by one server, so each ledger keeps its own. Switching reloads the
+              chart of accounts. Long-press to forget one. Adding one does not disconnect you from
+              this one.
+            </Text>
+          </>
+        ) : null}
 
         <Text style={styles.section}>Receipt scanning</Text>
         <View style={styles.card}>
@@ -250,6 +354,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', marginTop: 28, marginBottom: 8,
   },
   card: { backgroundColor: theme.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 4 },
+  ledgerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.hairline,
+  },
+  ledgerText: { flex: 1, marginRight: 12 },
+  ledgerName: { color: theme.inkSoft, fontSize: 14, fontWeight: '600' },
+  ledgerNameOn: { color: theme.ink },
+  ledgerUrl: { color: theme.inkFaint, fontSize: 11, marginTop: 2 },
+  ledgerMark: { color: theme.accent, fontSize: 12, fontWeight: '600' },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.hairline,

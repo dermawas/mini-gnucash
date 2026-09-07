@@ -20,8 +20,12 @@ import { useConnection } from '../../src/store/connectionStore';
 import { getRegister, callRpc, type Register, type RegisterRow } from '../../src/services/api';
 import { formatAmount } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
+import { usePrivacy, maskIfHidden } from '../../src/store/privacyStore';
 
 export default function AccountRegister() {
+  const hidden = usePrivacy((s) => s.hidden);
+  const toggleHidden = usePrivacy((s) => s.toggle);
+  const loadPrivacy = usePrivacy((s) => s.load);
   const { guid } = useLocalSearchParams<{ guid: string }>();
   const router = useRouter();
   const canWrite = useConnection((s) => s.canWrite());
@@ -47,6 +51,7 @@ export default function AccountRegister() {
   }, [guid, noteFailure]);
 
   useEffect(() => {
+    loadPrivacy();
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
@@ -129,6 +134,15 @@ export default function AccountRegister() {
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
           <Icon name="chevron-left" size={26} color={theme.inkSoft} />
+        </Pressable>
+        <Pressable
+          onPress={toggleHidden}
+          hitSlop={12}
+          style={styles.eye}
+          accessibilityRole="button"
+          accessibilityLabel={hidden ? 'Show amounts' : 'Hide amounts'}
+        >
+          <Icon name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={theme.inkSoft} />
         </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.h1} numberOfLines={1}>{register?.account_name ?? 'Register'}</Text>
@@ -216,10 +230,10 @@ export default function AccountRegister() {
                     style={[styles.rowAmount, r.quantity < 0 ? styles.neg : styles.pos]}
                     numberOfLines={1}
                   >
-                    {formatAmount(r.quantity, currency, scu)}
+                    {maskIfHidden(formatAmount(r.quantity, currency, scu), hidden)}
                   </Text>
                   <Text style={styles.rowBalance} numberOfLines={1}>
-                    {formatAmount(item.balance, currency, scu)}
+                    {maskIfHidden(formatAmount(item.balance, currency, scu), hidden)}
                   </Text>
                 </View>
               </View>
@@ -239,6 +253,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 14, paddingTop: 4 },
   back: { padding: 4 },
+  eye: { marginRight: 4 },
   headerText: { flex: 1, marginLeft: 4 },
   h1: { color: theme.ink, fontSize: 21, fontFamily: 'DMSerifDisplay' },
   sub: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },

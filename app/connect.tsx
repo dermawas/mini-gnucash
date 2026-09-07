@@ -4,18 +4,25 @@
 import { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { saveCredentials, normalizeUrl, ping } from '../src/services/api';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { normalizeUrl, ping } from '../src/services/api';
+import { rememberInstance } from '../src/services/instances';
 import { useConnection } from '../src/store/connectionStore';
 import { useAccounts } from '../src/store/accountStore';
 import { theme } from '../src/constants/theme';
 
 export default function Connect() {
   const router = useRouter();
+  // Reached from Settings > Add another ledger. The screen is otherwise the
+  // first-run flow, and adding a second ledger is not a first run.
+  const adding = useLocalSearchParams<{ add?: string }>().add === '1';
   const refresh = useConnection((s) => s.refresh);
   const loadAccounts = useAccounts((s) => s.load);
 
   const [url, setUrl] = useState('');
+  // Optional. Blank falls back to host:port, which is still better than
+  // nothing once there is more than one ledger in the list.
+  const [name, setName] = useState('');
   const [token, setToken] = useState('');
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -41,10 +48,13 @@ export default function Connect() {
 
   async function handleSave() {
     if (!canTest) return;
-    await saveCredentials(url, token);
+    // Stores the pair and makes it active, so this ledger can be switched
+    // back to later without retyping the token.
+    await rememberInstance(url, token, name);
     await refresh();
     await loadAccounts();
-    router.replace('/(tabs)/accounts');
+    if (adding) router.replace('/(tabs)/settings');
+    else router.replace('/(tabs)/accounts');
   }
 
   return (
@@ -54,6 +64,21 @@ export default function Connect() {
         <Text style={styles.lede}>
           This app talks straight to your own GnuCash database through PostgREST. Nothing is stored
           on a server of ours, because there isn't one.
+        </Text>
+
+        <Text style={styles.label}>Name this ledger</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Production, or Dev clone"
+          placeholderTextColor={theme.inkFaint}
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+          autoCorrect={false}
+        />
+        <Text style={styles.hint}>
+          Optional. It only labels this connection in Settings, so you can switch between ledgers
+          without re-entering a token. Left blank, the address is used.
         </Text>
 
         <Text style={styles.label}>PostgREST URL</Text>
