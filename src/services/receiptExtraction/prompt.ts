@@ -51,7 +51,20 @@ IMPORTANT — receipt_tax must only be a positive amount that gets ADDED on top 
 export const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
-    merchant: { type: 'string' },
+    merchant: {
+      type: 'string',
+      // Left undescribed until 2026-09-07, when a receipt was booked against
+      // "Ruko D'Bali" -- the shophouse complex printed in the header -- rather
+      // than the restaurant, Bahagia Chinese Food. With no description the
+      // model was inferring the field's meaning from its name alone, and a
+      // header commonly carries the business, its address and its branch on
+      // consecutive lines.
+      //
+      // The stability sentence is doing separate work: the same Holland Bakery
+      // photo returned "HOLLAND BAKERY" and then "HOLLAND BAKERY PONDOK
+      // BAMBU" twenty minutes apart, which is what defeated merchantMemory.
+      description: `The BUSINESS name, as the business trades under. NOT its address, NOT the mall, shophouse, plaza or complex it sits in, and NOT a branch or outlet suffix. A receipt header often carries several of these on consecutive lines — choose the one naming the business itself. For example "Bahagia Chinese Food", not "Ruko D'Bali"; "Holland Bakery", not "Holland Bakery Pondok Bambu". Report the same name for the same shop every time, so two photos of one merchant agree.`,
+    },
     date: { type: 'string', description: 'YYYY-MM-DD' },
     currency: { type: 'string', description: 'e.g. IDR, USD' },
     receipt_type: {

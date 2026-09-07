@@ -135,6 +135,14 @@ export default function AccountRegister() {
         <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
           <Icon name="chevron-left" size={26} color={theme.inkSoft} />
         </Pressable>
+        <View style={styles.headerText}>
+          <Text style={styles.h1} numberOfLines={1}>{register?.account_name ?? 'Register'}</Text>
+          {register ? (
+            <Text style={styles.sub}>
+              {register.account_type} · {register.commodity} · last {register.window_days} days
+            </Text>
+          ) : null}
+        </View>
         <Pressable
           onPress={toggleHidden}
           hitSlop={12}
@@ -144,14 +152,6 @@ export default function AccountRegister() {
         >
           <Icon name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={theme.inkSoft} />
         </Pressable>
-        <View style={styles.headerText}>
-          <Text style={styles.h1} numberOfLines={1}>{register?.account_name ?? 'Register'}</Text>
-          {register ? (
-            <Text style={styles.sub}>
-              {register.account_type} · {register.commodity} · last {register.window_days} days
-            </Text>
-          ) : null}
-        </View>
       </View>
 
       <ConnectionBanner />
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 14, paddingTop: 4 },
   back: { padding: 4 },
-  eye: { marginRight: 4 },
+  eye: { marginLeft: 8, padding: 4 },
   headerText: { flex: 1, marginLeft: 4 },
   h1: { color: theme.ink, fontSize: 21, fontFamily: 'DMSerifDisplay' },
   sub: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },
