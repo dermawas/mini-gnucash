@@ -37,13 +37,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import Icon from '@react-native-vector-icons/material-design-icons';
+import { Icon } from '../../src/components/Icon';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts } from '../../src/store/accountStore';
 import { useConnection } from '../../src/store/connectionStore';
 import { getBalances, type Balance } from '../../src/services/api';
 import { formatAmount } from '../../src/utils/currency';
-import { theme } from '../../src/constants/theme';
+import { theme, fonts } from '../../src/constants/theme';
 import { usePrivacy, maskIfHidden } from '../../src/store/privacyStore';
 import type { Account } from '../../src/services/api';
 
@@ -152,11 +152,38 @@ export default function Accounts() {
     router.push(`/account/${a.guid}`);
   }
 
+  // The abbreviation on a row's avatar. Book accounts are numbered
+  // ("01-Assets", "0111-Checking Account"), and the number is the least
+  // distinguishing part of the name, so it is skipped before taking letters.
+  function initials(name: string): string {
+    const words = name.replace(/^[\d\-.\s]+/, '').split(/[\s\-_:]+/).filter(Boolean);
+    if (words.length === 0) return name.slice(0, 2).toUpperCase();
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ConnectionBanner />
+
+      {/*
+        No hero figure here, though the 2026-09-08 handoff draws a "Net worth"
+        slot at 28pt mono. It was built, shipped to the phone, and taken out
+        again the same day, because against the real book it could never show
+        a number: the root holds more than one commodity (an Imbalance-CNY
+        account sits beside the IDR tree), and 01-Assets own subtree spans
+        IDR, USD, CNY and XAU, so balance_subtree is null. A 28pt figure that
+        is permanently "--" is worse than no figure.
+
+        It could be made to work per-commodity, from the leaves, with no
+        exchange rate involved -- rule 1 forbids COMBINING currencies, not
+        totalling each separately. That was offered and declined: the account
+        list is what this screen is for. Do not re-add the slot without that
+        leaf-level sum behind it.
+      */}
       <View style={styles.header}>
         <View style={styles.headTop}>
-          <Text style={[styles.h1, styles.headTitle]} numberOfLines={1}>
+          <Text style={styles.h1} numberOfLines={1}>
             {current ? current.name : 'Accounts'}
           </Text>
           <Pressable
@@ -165,11 +192,7 @@ export default function Accounts() {
             accessibilityRole="button"
             accessibilityLabel={hidden ? 'Show balances' : 'Hide balances'}
           >
-            <Icon
-              name={hidden ? 'eye-off-outline' : 'eye-outline'}
-              size={22}
-              color={theme.inkSoft}
-            />
+            <Icon name={hidden ? 'hide' : 'show'} size={22} color={theme.inkSoft} />
           </Pressable>
         </View>
         {current ? (
@@ -185,7 +208,7 @@ export default function Accounts() {
           onPress={() => setTrail((t) => t.slice(0, -1))}
           hitSlop={8}
         >
-          <Icon name="chevron-left" size={26} color={theme.accent} />
+          <Icon name="chevronLeft" size={20} color={theme.ink} />
           <Text style={styles.upText} numberOfLines={1}>
             {trail.length > 1 ? `Back to ${trail[trail.length - 2].name}` : 'All accounts'}
           </Text>
@@ -194,29 +217,27 @@ export default function Accounts() {
         <View style={styles.actions}>
           <View style={styles.actionsInner}>
             <Pressable style={styles.action} onPress={() => router.push('/entry/spend')}>
-              <Icon name="minus-circle-outline" size={18} color={theme.accent} />
+              <Icon name="spend" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Spend</Text>
             </Pressable>
             <Pressable
               style={styles.action}
               onPress={() => router.push('/entry/spend?direction=inflow')}
             >
-              <Icon name="plus-circle-outline" size={18} color={theme.accent} />
+              <Icon name="add" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Income</Text>
             </Pressable>
             <Pressable style={styles.action} onPress={() => router.push('/entry/transfer')}>
-              <Icon name="swap-horizontal" size={18} color={theme.accent} />
+              <Icon name="split" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Transfer</Text>
             </Pressable>
             <Pressable style={styles.action} onPress={() => router.push('/scan/review')}>
-              <Icon name="camera-outline" size={18} color={theme.accent} />
+              <Icon name="scan" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Scan</Text>
             </Pressable>
           </View>
         </View>
       )}
-
-      <ConnectionBanner />
 
       {cachedAt && !showMoney ? (
         <Text style={styles.cacheNote}>
@@ -226,15 +247,23 @@ export default function Accounts() {
       ) : null}
 
       {accountsLoading && accounts.length === 0 ? (
-        <ActivityIndicator style={styles.spinner} color={theme.accent} />
+        <ActivityIndicator style={styles.spinner} color={theme.ink} />
       ) : (
         <FlatList
           data={rows}
           keyExtractor={(item) => item.guid}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={theme.accent} />
+            <RefreshControl refreshing={refreshing} onRefresh={refreshAll} tintColor={theme.ink} />
           }
           contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            rows.length ? (
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionLabel}>{current ? 'INSIDE' : 'ACCOUNTS'}</Text>
+                <Text style={styles.sectionCount}>{rows.length}</Text>
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <Text style={styles.empty}>
               {connState === 'offline'
@@ -250,9 +279,21 @@ export default function Accounts() {
             // that null must render as "--", never as 0.
             const value = kids > 0 && bal ? bal.balance_subtree : bal?.balance_total ?? null;
             const mixed = kids > 0 && bal && bal.balance_subtree === null;
+            const negative = value != null && value < 0;
+            // A childless placeholder is the one row that goes nowhere: no
+            // register, nothing beneath it. Its chevron would be a promise the
+            // tap does not keep.
+            const inert = kids === 0 && item.placeholder === 1;
 
             return (
-              <Pressable style={styles.row} onPress={() => open(item)}>
+              <Pressable
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                onPress={() => open(item)}
+                disabled={inert}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials(item.name)}</Text>
+                </View>
                 <View style={styles.rowMain}>
                   <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
                   <Text style={styles.rowMeta} numberOfLines={1}>
@@ -261,22 +302,23 @@ export default function Accounts() {
                     {kids > 0 ? ` · ${kids} inside` : ''}
                   </Text>
                 </View>
-                <View style={styles.rowRight}>
-                  <Text style={styles.rowAmount}>
-                    {!showMoney
-                      ? '—'
-                      : mixed
-                        ? '--'
-                        : value != null
-                          ? maskIfHidden(formatAmount(value, item.commodity_mnemonic ?? 'IDR', item.commodity_scu), hidden)
-                          : '…'}
-                  </Text>
-                  {kids > 0 ? (
-                    <Icon name="chevron-right" size={18} color={theme.inkFaint} />
-                  ) : item.placeholder === 1 ? null : (
-                    <Icon name="chevron-right" size={18} color={theme.inkFaint} />
-                  )}
-                </View>
+                <Text style={[styles.rowAmount, negative && styles.rowAmountNeg]}>
+                  {!showMoney
+                    ? '—'
+                    : mixed
+                      ? '--'
+                      : value != null
+                        ? maskIfHidden(
+                            formatAmount(
+                              value, item.commodity_mnemonic ?? 'IDR', item.commodity_scu),
+                            hidden)
+                        : '…'}
+                </Text>
+                {inert ? (
+                  <View style={styles.chevronGap} />
+                ) : (
+                  <Icon name="chevron" size={16} color={theme.disabled} />
+                )}
               </Pressable>
             );
           }}
@@ -296,29 +338,35 @@ export default function Accounts() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
+  header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 },
   headTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headTitle: { flex: 1, marginRight: 12 },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay' },
-  crumb: { color: theme.inkFaint, fontSize: 11, marginTop: 4 },
-  // Full-width and row-height on purpose. This was a 18px chevron next to 14px
-  // text with no top padding -- a target well under the 48dp minimum, and the
-  // only way back out of a drill-down, so a missed tap stranded you.
+  h1: {
+    color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, flex: 1, marginRight: 12,
+  },
+  crumb: { color: theme.inkFaint, fontSize: 12, marginTop: 6, fontFamily: fonts.sans },
+  // Full-width and row-height on purpose. This was a small chevron next to
+  // 14px text with no top padding -- a target well under the 48dp minimum, and
+  // the only way back out of a drill-down, so a missed tap stranded you.
   up: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
     marginBottom: 10,
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.hairlineStrong,
     minHeight: 52,
   },
-  upPressed: { opacity: 0.6 },
-  upText: { color: theme.accent, fontSize: 16, fontWeight: '600', marginLeft: 4, flex: 1 },
-  actions: { paddingHorizontal: 10, paddingBottom: 14 },
+  upPressed: { backgroundColor: theme.pressed },
+  upText: {
+    color: theme.ink, fontSize: 14, fontFamily: fonts.sansMedium, marginLeft: 6, flex: 1,
+  },
+  actions: { paddingHorizontal: 16, paddingBottom: 14 },
   actionsInner: { flexDirection: 'row', justifyContent: 'space-between' },
+  // Chips, per the handoff: card surface, 1px hairline, radius 8.
   action: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,43 +375,67 @@ const styles = StyleSheet.create({
     // Without this a flex child refuses to shrink below its content width.
     minWidth: 0,
     marginHorizontal: 3,
-    paddingVertical: 11,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
     backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.hairlineStrong,
   },
   // flexShrink + numberOfLines are a guard, not decoration. At font_scale 1.3
   // "Transfer" already fills its box to the pixel and its icon is the first
   // thing the layout compresses; a fifth button or a longer label would clip
-  // it, which is bug 2 all over again. Let the label shrink and stay on one
-  // line instead of pushing the row wider than the screen.
+  // it. Let the label shrink and stay on one line instead of pushing the row
+  // wider than the screen.
   actionText: {
-    // 12, not 13. At font_scale 1.3 the four labels need 228px for "Transfer"
-    // and the box gives 165 for its text -- icon 48 + gap 15 + text 165 filled
-    // the button exactly, with nothing spare. A point off the label, plus the
-    // padding reclaimed above, buys real slack instead of the zero it had.
-    color: theme.accent, fontSize: 12, fontWeight: '600', marginLeft: 5,
+    color: theme.ink, fontSize: 12, fontFamily: fonts.sansMedium, marginLeft: 5,
     flexShrink: 1,
   },
   cacheNote: {
-    color: theme.amber, fontSize: 12, lineHeight: 17,
-    paddingHorizontal: 20, paddingBottom: 12,
+    color: theme.coral, fontSize: 12, lineHeight: 17,
+    paddingHorizontal: 20, paddingBottom: 12, fontFamily: fonts.sans,
   },
   spinner: { marginTop: 40 },
-  list: { paddingHorizontal: 16, paddingBottom: 40 },
+  list: { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionHead: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    paddingTop: 14, paddingBottom: 6,
+    borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong,
+  },
+  sectionLabel: {
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.1, fontFamily: fonts.sansMedium,
+  },
+  sectionCount: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.mono },
+  // A hairline list rather than the rounded cards this screen used to draw.
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: theme.surface, borderRadius: 10,
-    paddingVertical: 14, paddingHorizontal: 14, marginBottom: 6,
+    paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
   },
+  rowPressed: { backgroundColor: theme.pressed },
+  avatar: {
+    width: 28, height: 28, borderRadius: 8, marginRight: 12,
+    backgroundColor: theme.surfaceSoft, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: theme.inkSoft, fontSize: 11, fontFamily: fonts.sansSemi },
   rowMain: { flex: 1, marginRight: 12 },
-  rowName: { color: theme.ink, fontSize: 15 },
-  rowMeta: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },
-  rowRight: { flexDirection: 'row', alignItems: 'center' },
-  rowAmount: { color: theme.ink, fontSize: 14, fontVariant: ['tabular-nums'], marginRight: 4 },
-  empty: { color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingTop: 40, textAlign: 'center' },
-  errorFooter: { color: theme.coral, fontSize: 12, paddingHorizontal: 20, paddingBottom: 6 },
+  rowName: { color: theme.ink, fontSize: 15, fontFamily: fonts.sans },
+  rowMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.sans },
+  rowAmount: {
+    color: theme.ink, fontSize: 14, fontFamily: fonts.mono,
+    fontVariant: ['tabular-nums'], marginRight: 8,
+  },
+  rowAmountNeg: { color: theme.coral },
+  chevronGap: { width: 16 },
+  empty: {
+    color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingTop: 40,
+    textAlign: 'center', fontFamily: fonts.sans,
+  },
+  errorFooter: {
+    color: theme.coral, fontSize: 12, paddingHorizontal: 20, paddingBottom: 6,
+    fontFamily: fonts.sans,
+  },
   footnote: {
     color: theme.inkFaint, fontSize: 11, lineHeight: 16,
-    paddingHorizontal: 20, paddingBottom: 10,
+    paddingHorizontal: 20, paddingBottom: 10, fontFamily: fonts.sans,
   },
 });

@@ -9,6 +9,11 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
+import { theme } from '../src/constants/theme';
+import {
+  IBMPlexSans_400Regular, IBMPlexSans_500Medium, IBMPlexSans_600SemiBold,
+} from '@expo-google-fonts/ibm-plex-sans';
+import { IBMPlexMono_400Regular, IBMPlexMono_500Medium } from '@expo-google-fonts/ibm-plex-mono';
 import * as Sentry from '@sentry/react-native';
 import { useConnection } from '../src/store/connectionStore';
 import { readInFlight, clearInFlight, checkRequest } from '../src/services/api';
@@ -66,8 +71,19 @@ function RootLayout() {
   const refresh = useConnection((s) => s.refresh);
   const [ready, setReady] = useState(false);
 
+  // IBM Plex, per the 2026-09-08 design handoff. The keys ARE the family
+  // names used in styles, which is why they are spelled out rather than
+  // spread -- `src/constants/theme.ts` names the same strings in `fonts`.
+  //
+  // DM Serif Display is no longer loaded. The handoff sets screen titles in
+  // Sans 500; the .ttf and its licence stay in assets/fonts rather than being
+  // deleted, so going back is a one-line change.
   const [fontsLoaded] = useFonts({
-    DMSerifDisplay: require('../assets/fonts/DMSerifDisplay-Regular.ttf'),
+    IBMPlexSans_400Regular,
+    IBMPlexSans_500Medium,
+    IBMPlexSans_600SemiBold,
+    IBMPlexMono_400Regular,
+    IBMPlexMono_500Medium,
   });
 
   useEffect(() => {
@@ -96,8 +112,8 @@ function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false }} />
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.bg } }} />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

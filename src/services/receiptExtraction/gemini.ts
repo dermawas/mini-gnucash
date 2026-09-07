@@ -19,6 +19,33 @@ import type { RawExtraction, TokenUsage } from './types';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 
+// The models this app has actually been run against, and what was MEASURED on
+// the device rather than what the docs claim. Offered as a list because the
+// two names worth having are easy to mistype, and a typo here does not fail
+// here -- it fails minutes later at the scan, as a 404, with a receipt in your
+// hand.
+//
+// This list is NOT a closed set, and must never become one. Google renames and
+// retires models; that is the entire reason the model is settable instead of
+// compiled in. The picker keeps a free-text way in and `saveAiModel` still
+// accepts any string. Adding an entry here is a convenience, never a gate.
+//
+// Deliberately absent: `gemini-2.5-flash` and `gemini-2.5-flash-lite`. Both
+// are returned by ListModels and both answer 404 NOT_FOUND on
+// :generateContent for this key. Listing them would offer a dead end wearing
+// an official-looking name -- being in Google's list does not mean being
+// callable.
+export const KNOWN_GEMINI_MODELS: { id: string; note: string }[] = [
+  {
+    id: DEFAULT_GEMINI_MODEL,
+    note: 'Extracts as well as the lite model, but slower: 12-14s on a receipt.',
+  },
+  {
+    id: 'gemini-flash-lite-latest',
+    note: 'Fastest and the most available under load: 3-4s. What got the first real receipt through.',
+  },
+];
+
 // Deliberately far longer than src/services/api.ts's 8s. That budget is tuned
 // for a LAN round-trip to PostgREST over the VPN, where failing fast is free.
 // Vision inference over a photographed receipt legitimately runs 10-30s, so an

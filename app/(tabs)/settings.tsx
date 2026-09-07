@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, Switch, TextInput, StyleSheet, Alert,
+  View, Text, Pressable, ScrollView, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,13 +15,16 @@ import {
   isCrashReportingEnabled, setCrashReportingEnabled, loadCrashReportingPreference,
 } from '../../src/services/crashReporting';
 import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } from '../../src/services/aiKey';
-import { DEFAULT_GEMINI_MODEL } from '../../src/services/receiptExtraction';
+import { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from '../../src/services/receiptExtraction';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
 import {
   listInstances, getActiveId, activate, forgetInstance, adoptCurrentCredentials,
   type Instance,
 } from '../../src/services/instances';
-import { theme } from '../../src/constants/theme';
+import { SettingRow } from '../../src/components/SettingRow';
+import { usePrivacy } from '../../src/store/privacyStore';
+import Constants from 'expo-constants';
+import { theme, fonts } from '../../src/constants/theme';
 
 export default function Settings() {
   const router = useRouter();
@@ -33,14 +36,14 @@ export default function Settings() {
 
   const [url, setUrl] = useState<string | null>(null);
   const [crash, setCrash] = useState(isCrashReportingEnabled());
-  // The saved key is shown masked and never re-rendered in full. `keyDraft` is
-  // only ever what the user is typing right now.
+  // The saved key is shown masked and never re-rendered in full. What is being
+  // typed lives inside the sheet, so no half-entered secret is held here.
   const [savedKey, setSavedKey] = useState<string | null>(null);
-  const [keyDraft, setKeyDraft] = useState('');
+  const [editing, setEditing] = useState<'key' | 'model' | null>(null);
   // The model is shown in full -- it is not a secret, and the whole point of
   // exposing it is to be able to read what is in force before changing it.
   const [savedModel, setSavedModel] = useState<string>(DEFAULT_GEMINI_MODEL);
-  const [modelDraft, setModelDraft] = useState('');
+
   // How many merchants this phone has learned an account for. A count only --
   // the names are never shown here, because a merchant list is a spending
   // history and this screen is not where that belongs.
@@ -48,8 +51,14 @@ export default function Settings() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  // Shared with the eye on Accounts and the register -- one store, so the
+  // toggle here and the icon there can never disagree.
+  const hidden = usePrivacy((s) => s.hidden);
+  const toggleHidden = usePrivacy((s) => s.toggle);
+  const loadPrivacy = usePrivacy((s) => s.load);
 
   useEffect(() => {
+    loadPrivacy();
     loadCredentials().then((c) => setUrl(c?.url ?? null));
     // Adopts a connection made before this list existed, so the switcher is
     // not empty on an install that predates it.
@@ -92,24 +101,21 @@ export default function Settings() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.h1}>Settings</Text>
         <ConnectionBanner />
+        <Text style={styles.h1}>Settings</Text>
 
-        <Text style={styles.section}>Ledger</Text>
+        <Text style={styles.section}>LEDGER</Text>
         <View style={styles.card}>
-          <Row label="Server" value={url ?? 'Not configured'} />
+          <Row label="Server" value={url ?? 'Not configured'} mono />
           <Row label="Status" value={conn.state} />
           {conn.lockedBy ? <Row label="Locked by" value={conn.lockedBy} /> : null}
-          <Row label="Accounts" value={accountCount ? String(accountCount) : '—'} />
+          <Row label="Accounts" value={accountCount ? String(accountCount) : '—'} mono />
           <Row
             label="Trading accounts"
             value={conn.state === 'online' || conn.state === 'locked'
               ? (conn.tradingAccounts ? 'On' : 'Off')
               : '—'}
           />
-          {cachedAt ? (
-            <Row label="Account list saved" value={new Date(cachedAt).toLocaleString()} />
-          ) : null}
         </View>
 
         <Pressable style={styles.btnGhost} onPress={async () => { await conn.refresh(); await loadAccounts(); }}>
@@ -118,14 +124,14 @@ export default function Settings() {
 
         {instances.length > 0 ? (
           <>
-            <Text style={styles.section}>Ledgers on this phone</Text>
+            <Text style={styles.section}>LEDGERS ON THIS PHONE</Text>
             <View style={styles.card}>
               {instances.map((i) => {
                 const active = i.id === activeId;
                 return (
                   <Pressable
                     key={i.id}
-                    style={styles.ledgerRow}
+                    style={({ pressed }) => [styles.ledgerRow, pressed && styles.rowPressed]}
                     disabled={active || switching}
                     onPress={async () => {
                       setSwitching(true);
@@ -181,17 +187,14 @@ export default function Settings() {
                       <Text style={[styles.ledgerName, active ? styles.ledgerNameOn : null]}>
                         {i.name}
                       </Text>
-                      <Text style={styles.ledgerUrl}>{i.url}</Text>
+                      <Text style={styles.ledgerUrl} numberOfLines={1}>{i.url}</Text>
                     </View>
                     <Text style={styles.ledgerMark}>{active ? 'In use' : 'Switch'}</Text>
                   </Pressable>
                 );
               })}
             </View>
-            <Pressable
-              style={styles.btnGhost}
-              onPress={() => router.push('/connect?add=1')}
-            >
+            <Pressable style={styles.btnGhost} onPress={() => router.push('/connect?add=1')}>
               <Text style={styles.btnGhostText}>Add another ledger</Text>
             </Pressable>
             <Text style={styles.hint}>
@@ -202,109 +205,78 @@ export default function Settings() {
           </>
         ) : null}
 
-        <Text style={styles.section}>Receipt scanning</Text>
+        <Text style={styles.section}>RECEIPT SCANNING</Text>
         <View style={styles.card}>
-          {savedKey ? (
-            <Row label="Gemini key" value={maskKey(savedKey)} />
-          ) : (
-            <Text style={styles.hint}>
-              No key saved. Scanning is off until you add one.
-            </Text>
-          )}
-          <Row label="Model" value={savedModel} />
-          <Text style={styles.prose}>
-            Scanning uses a Gemini key you obtain yourself, billed to your own Google account. It is
-            kept in this phone's keystore and sent only to Google, never to your ledger and never to
-            us. A receipt photo is the one thing this app sends outside your own network.
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={keyDraft}
-            onChangeText={setKeyDraft}
+          <SettingRow
+            label="Gemini key"
+            value={savedKey ? maskKey(savedKey) : 'Not set'}
+            mono
+            secure
+            open={editing === 'key'}
+            onOpen={() => setEditing('key')}
+            onCancel={() => setEditing(null)}
             placeholder={savedKey ? 'Replace the saved key' : 'Paste your Gemini API key'}
-            placeholderTextColor={theme.inkFaint}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-          />
-          <Pressable
-            style={[styles.btnGhost, !keyDraft.trim() && styles.btnOff]}
-            disabled={!keyDraft.trim()}
-            onPress={async () => {
-              await saveAiKey(keyDraft);
-              setSavedKey(keyDraft.trim());
-              setKeyDraft('');
-              Alert.alert('Key saved', 'Receipt scanning is ready.');
+            help="Your own key, billed to your own Google account. It stays in this phone's keystore and is sent only to Google — never to your ledger, and never to us."
+            onSave={async (key) => {
+              await saveAiKey(key);
+              setSavedKey(key);
+              setEditing(null);
             }}
-          >
-            <Text style={styles.btnGhostText}>Save key</Text>
-          </Pressable>
-          <Text style={styles.prose}>
-            The model only needs changing if Google retires this one, or if it is busy for long
-            enough to be annoying -- a scan that keeps saying the scanner is busy will often go
-            through on a different model. Leave the box empty and save to go back to{' '}
-            {DEFAULT_GEMINI_MODEL}.
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={modelDraft}
-            onChangeText={setModelDraft}
-            placeholder={savedModel}
-            placeholderTextColor={theme.inkFaint}
-            autoCapitalize="none"
-            autoCorrect={false}
+            onRemove={savedKey ? async () => {
+              await clearAiKey();
+              setSavedKey(null);
+              setSavedModel(DEFAULT_GEMINI_MODEL);
+              setEditing(null);
+            } : undefined}
+            removeLabel="Remove key"
           />
-          <Pressable
-            style={styles.btnGhost}
-            onPress={async () => {
-              await saveAiModel(modelDraft);
-              const now = await getAiModel();
-              setSavedModel(now);
-              setModelDraft('');
-              Alert.alert('Model saved', `Scans will use ${now}.`);
+          <SettingRow
+            label="Model"
+            value={savedModel}
+            mono
+            open={editing === 'model'}
+            onOpen={() => setEditing('model')}
+            onCancel={() => setEditing(null)}
+            placeholder="Another model name"
+            current={savedModel}
+            suggestions={KNOWN_GEMINI_MODELS}
+            help="Worth changing if Google retires one, or if a scan keeps saying the scanner is busy — that is usually a passing spike, and another model often goes through in the meantime."
+            onSave={async (model) => {
+              // The default is stored as NO OVERRIDE rather than as its own
+              // name, so a release that changes the default carries anyone who
+              // picked it along instead of pinning them to today's.
+              await saveAiModel(model === DEFAULT_GEMINI_MODEL ? '' : model);
+              setSavedModel(await getAiModel());
+              setEditing(null);
             }}
-          >
-            <Text style={styles.btnGhostText}>Save model</Text>
-          </Pressable>
-          {savedKey ? (
-            <Pressable
-              style={styles.btnGhost}
-              onPress={async () => {
-                await clearAiKey();
-                setSavedKey(null);
-                setSavedModel(DEFAULT_GEMINI_MODEL);
-                Alert.alert('Key removed', 'Receipt scanning is off until you add one again.');
-              }}
-            >
-              <Text style={styles.btnGhostText}>Remove key</Text>
-            </Pressable>
+          />
+          {!savedKey ? (
+            <Text style={styles.hintInset}>Scanning is off until you add a key.</Text>
           ) : null}
         </View>
 
-        <Text style={styles.section}>Privacy</Text>
+        <Text style={styles.section}>PRIVACY</Text>
         <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchText}>
-              <Text style={styles.rowLabel}>Crash reporting</Text>
-              <Text style={styles.hint}>
-                Off by default. Sends crash traces only, never your ledger data.
-              </Text>
-            </View>
-            <Switch
-              value={crash}
-              onValueChange={async (v) => { setCrash(v); await setCrashReportingEnabled(v); }}
-              trackColor={{ true: theme.accent, false: theme.hairline }}
-            />
-          </View>
-
-          <Text style={styles.hint}>
+          <ToggleRow
+            label="Hide balances"
+            sub="Masks amounts on the Accounts screen and in registers"
+            value={hidden}
+            onChange={() => { void toggleHidden(); }}
+          />
+          <ToggleRow
+            label="Crash reporting"
+            sub="Off by default. Sends crash traces only, never your ledger data."
+            value={crash}
+            onChange={async (v) => { setCrash(v); await setCrashReportingEnabled(v); }}
+          />
+          <Text style={styles.hintInset}>
             {merchants > 0
               ? `Remembered which account you chose at ${merchants} merchant${merchants === 1 ? '' : 's'}. Kept on this phone, never written to your book and never sent anywhere. It is only recalled when a later scan reads the shop name the same way, and often it does not.`
               : 'Nothing remembered yet. Choosing an account for a scanned line records what you meant, though a scan only recalls it when the shop name comes back the same, and often it does not.'}
           </Text>
           {merchants > 0 ? (
             <Pressable
-              style={styles.btnGhost}
+              style={styles.btnGhostInset}
               onPress={async () => {
                 await forgetAll();
                 setMerchants(0);
@@ -316,7 +288,7 @@ export default function Settings() {
           ) : null}
         </View>
 
-        <Text style={styles.section}>What this app will not do</Text>
+        <Text style={styles.section}>WHAT THIS APP WILL NOT DO</Text>
         <View style={styles.card}>
           <Text style={styles.prose}>
             It cannot edit or delete a transaction, and it cannot reconcile. Those belong in GnuCash
@@ -331,59 +303,122 @@ export default function Settings() {
         <Pressable style={styles.btnDanger} onPress={handleDisconnect}>
           <Text style={styles.btnDangerText}>Disconnect</Text>
         </Pressable>
+
+        <Text style={styles.footer}>
+          mini-gnucash {Constants.expoConfig?.version ?? ''}
+          {cachedAt ? ` · account list saved ${new Date(cachedAt).toLocaleString()}` : ''}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+// A row of fact. Not tappable -- anything editable on this screen is a
+// SettingRow, which draws the pencil that says so.
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue} numberOfLines={1}>{value}</Text>
+      <Text style={[styles.rowValue, mono && styles.rowValueMono]} numberOfLines={1}>{value}</Text>
     </View>
+  );
+}
+
+// The handoff's toggle, at its stated size: a 40x24 track, an 18px knob, ink
+// when on and #C8C0B0 when off. Built rather than themed because RN's Switch
+// renders at the platform's own dimensions on each OS, and this one has to
+// match the rest of a hand-drawn screen.
+function ToggleRow({
+  label, sub, value, onChange,
+}: { label: string; sub: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Pressable
+      style={styles.switchRow}
+      onPress={() => onChange(!value)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+    >
+      <View style={styles.switchText}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <Text style={styles.hint}>{sub}</Text>
+      </View>
+      <View style={[styles.track, value && styles.trackOn]}>
+        <View style={[styles.knob, value && styles.knobOn]} />
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  scroll: { padding: 20, paddingBottom: 60 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 16 },
+  scroll: { paddingBottom: 60 },
+  h1: {
+    color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 6,
+  },
   section: {
-    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.2,
-    textTransform: 'uppercase', marginTop: 28, marginBottom: 8,
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.1, fontFamily: fonts.sansMedium,
+    paddingHorizontal: 20, paddingTop: 22, paddingBottom: 6,
   },
-  card: { backgroundColor: theme.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 4 },
-  ledgerRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.hairline,
+  card: {
+    backgroundColor: theme.surface,
+    borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.hairlineStrong,
   },
-  ledgerText: { flex: 1, marginRight: 12 },
-  ledgerName: { color: theme.inkSoft, fontSize: 14, fontWeight: '600' },
-  ledgerNameOn: { color: theme.ink },
-  ledgerUrl: { color: theme.inkFaint, fontSize: 11, marginTop: 2 },
-  ledgerMark: { color: theme.accent, fontSize: 12, fontWeight: '600' },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.hairline,
+    paddingVertical: 13, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
   },
-  rowLabel: { color: theme.inkSoft, fontSize: 14 },
-  rowValue: { color: theme.ink, fontSize: 13, maxWidth: '60%', textAlign: 'right' },
-  switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  rowPressed: { backgroundColor: theme.pressed },
+  rowLabel: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
+  rowValue: {
+    color: theme.inkSoft, fontSize: 14, fontFamily: fonts.sans,
+    maxWidth: '55%', textAlign: 'right',
+  },
+  rowValueMono: { fontFamily: fonts.mono, fontSize: 13 },
+  ledgerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
+  },
+  ledgerText: { flex: 1, marginRight: 12 },
+  ledgerName: { color: theme.inkSoft, fontSize: 14, fontFamily: fonts.sansMedium },
+  ledgerNameOn: { color: theme.ink },
+  ledgerUrl: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.mono },
+  ledgerMark: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansSemi },
+  switchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14, paddingHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
+  },
   switchText: { flex: 1, marginRight: 12 },
-  hint: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 4 },
-  prose: { color: theme.inkSoft, fontSize: 13, lineHeight: 20, paddingVertical: 14 },
-  btnGhost: { paddingVertical: 14, alignItems: 'center', marginTop: 10 },
-  btnGhostText: { color: theme.accent, fontSize: 14, fontWeight: '600' },
-  btnOff: { opacity: 0.4 },
-  input: {
-    backgroundColor: theme.bg, borderRadius: 8, color: theme.ink, fontSize: 14,
-    paddingVertical: 12, paddingHorizontal: 12, marginTop: 12, minHeight: 46,
+  track: {
+    width: 40, height: 24, borderRadius: 12, backgroundColor: theme.toggleOff,
+    justifyContent: 'center', paddingHorizontal: 3,
   },
+  trackOn: { backgroundColor: theme.ink },
+  knob: { width: 18, height: 18, borderRadius: 9, backgroundColor: theme.bg },
+  knobOn: { alignSelf: 'flex-end' },
+  hint: { color: theme.inkFaint, fontSize: 12, lineHeight: 17, marginTop: 3, fontFamily: fonts.sans },
+  hintInset: {
+    color: theme.inkFaint, fontSize: 12, lineHeight: 17,
+    paddingHorizontal: 20, paddingVertical: 12, fontFamily: fonts.sans,
+  },
+  prose: {
+    color: theme.inkSoft, fontSize: 13, lineHeight: 20,
+    paddingHorizontal: 20, paddingVertical: 14, fontFamily: fonts.sans,
+  },
+  btnGhost: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  btnGhostInset: { paddingVertical: 14, paddingHorizontal: 20 },
+  btnGhostText: { color: theme.ink, fontSize: 14, fontFamily: fonts.sansMedium },
   btnDanger: {
-    borderWidth: 1, borderColor: theme.coral, borderRadius: 12,
-    paddingVertical: 15, alignItems: 'center', marginTop: 32,
+    borderWidth: 1, borderColor: theme.coral, borderRadius: 10,
+    paddingVertical: 14, alignItems: 'center', marginTop: 28, marginHorizontal: 20,
   },
-  btnDangerText: { color: theme.coral, fontSize: 15, fontWeight: '600' },
+  btnDangerText: { color: theme.coral, fontSize: 15, fontFamily: fonts.sansMedium },
+  footer: {
+    color: theme.inkFaint, fontSize: 12, lineHeight: 17,
+    paddingHorizontal: 20, paddingTop: 20, fontFamily: fonts.sans,
+  },
 });

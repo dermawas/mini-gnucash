@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Icon from '@react-native-vector-icons/material-design-icons';
+import { Icon } from '../../src/components/Icon';
 import AmountInput from '../../src/components/AmountInput';
 import { AccountPicker } from '../../src/components/AccountPicker';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -21,7 +21,7 @@ import { useConnection } from '../../src/store/connectionStore';
 import { callRpc, markInFlight, clearInFlight, type Account } from '../../src/services/api';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
-import { theme } from '../../src/constants/theme';
+import { theme, fonts } from '../../src/constants/theme';
 import { DateField } from '../../src/components/DateField';
 import { todayIso } from '../../src/utils/receiptDate';
 
@@ -46,6 +46,9 @@ export default function Spend() {
   const [description, setDescription] = useState('');
   const [picker, setPicker] = useState<{ kind: 'account' } | { kind: 'line'; key: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  // Drives the handoff's inline confirmation. A boolean rather than a toast:
+  // the button is where the user is already looking when a save lands.
+  const [saved, setSaved] = useState(false);
   // Previously hardcoded to today(), so nothing backdated could be entered.
   const [postDate, setPostDate] = useState<string>(todayIso());
 
@@ -103,13 +106,26 @@ export default function Spend() {
     setSaving(false);
 
     if (result.ok) {
-      Alert.alert(
-        result.data.status === 'already_recorded' ? 'Already recorded' : 'Recorded',
-        result.data.status === 'already_recorded'
-          ? 'This entry had already been written to your book.'
-          : `Written to GnuCash across ${result.data.line_count} line${result.data.line_count === 1 ? '' : 's'}.`,
-        [{ text: 'Done', onPress: () => router.back() }],
-      );
+      // 'already_recorded' keeps its alert. It means the idempotency key
+      // matched a write that had already landed, which is a different outcome
+      // from "this entry went in just now", and quietly showing the same
+      // "Saved" for both would hide a duplicate submission.
+      if (result.data.status === 'already_recorded') {
+        Alert.alert(
+          'Already recorded',
+          'This entry had already been written to your book.',
+          [{ text: 'Done', onPress: () => router.back() }],
+        );
+        return;
+      }
+      // The handoff's confirmation: "Saved" in the button for ~1.2s, then
+      // back to one empty line, staying on the screen. The funding account and
+      // the date are deliberately kept -- entering several things bought on
+      // the same day out of the same wallet is the normal case.
+      setSaved(true);
+      setLines([newLine()]);
+      setDescription('');
+      setTimeout(() => setSaved(false), 1200);
       return;
     }
 
@@ -128,18 +144,25 @@ export default function Spend() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.h1}>{inflow ? 'Income' : 'Expense'}</Text>
         <ConnectionBanner />
+        <Text style={styles.h1}>{inflow ? 'New income' : 'New spend'}</Text>
 
-        <Text style={styles.label}>{inflow ? 'Into' : 'Paid from'}</Text>
-        <Pressable style={styles.selector} onPress={() => setPicker({ kind: 'account' })}>
-          <Text style={account ? styles.selectorValue : styles.selectorPlaceholder} numberOfLines={2}>
-            {account ? account.full_path : 'Choose an account'}
-          </Text>
-          {account?.commodity_mnemonic ? (
-            <Text style={styles.selectorCcy}>{account.commodity_mnemonic}</Text>
-          ) : null}
-        </Pressable>
+        {/* The handoff's chip row: the two facts that frame every line, small
+            enough to sit side by side and tappable to change. */}
+        <View style={styles.chipRow}>
+          <DateField
+            value={postDate}
+            onChange={setPostDate}
+            variant="chip"
+          />
+          <Pressable style={styles.chip} onPress={() => setPicker({ kind: 'account' })}>
+            <Text style={styles.chipText} numberOfLines={1}>
+              {account
+                ? `${inflow ? 'Into' : 'From'} · ${account.name}`
+                : inflow ? 'Into · choose' : 'From · choose'}
+            </Text>
+          </Pressable>
+        </View>
 
         {account ? (
           <Text style={styles.ccyNote}>
@@ -148,58 +171,67 @@ export default function Spend() {
           </Text>
         ) : null}
 
-        <Text style={styles.label}>{inflow ? 'From' : 'Spent on'}</Text>
-        {lines.map((line, i) => {
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionLabel}>LINES</Text>
+          <Text style={styles.sectionCount}>{lines.length}</Text>
+        </View>
+
+        {lines.map((line) => {
           const lineAcct = line.accountGuid ? byGuid(line.accountGuid) : undefined;
           return (
-            <View key={line.key} style={styles.lineCard}>
-              <View style={styles.lineHead}>
-                <Text style={styles.lineNum}>{i + 1}</Text>
-                {lines.length > 1 ? (
+            <View key={line.key} style={styles.lineRow}>
+              <View style={styles.lineLeft}>
+                <View style={styles.lineTop}>
                   <Pressable
-                    hitSlop={10}
-                    onPress={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
+                    style={styles.lineAcct}
+                    onPress={() => setPicker({ kind: 'line', key: line.key })}
                   >
-                    <Icon name="close" size={16} color={theme.inkFaint} />
+                    <Text
+                      style={lineAcct ? styles.lineAcctText : styles.linePlaceholder}
+                      numberOfLines={1}
+                    >
+                      {lineAcct
+                        ? lineAcct.name
+                        : inflow ? 'Choose an income account' : 'Choose an expense account'}
+                    </Text>
                   </Pressable>
-                ) : null}
+                  {lines.length > 1 ? (
+                    <Pressable
+                      hitSlop={12}
+                      onPress={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
+                      accessibilityRole="button"
+                      accessibilityLabel="Remove this line"
+                    >
+                      <Text style={styles.lineRemove}>×</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                <TextInput
+                  style={styles.lineMemo}
+                  placeholder="Note (optional)"
+                  placeholderTextColor={theme.inkFaint}
+                  value={line.memo}
+                  onChangeText={(memo) => setLine(line.key, { memo })}
+                />
               </View>
 
-              <Pressable
-                style={styles.lineSelector}
-                onPress={() => setPicker({ kind: 'line', key: line.key })}
-              >
-                <Text
-                  style={lineAcct ? styles.selectorValue : styles.selectorPlaceholder}
-                  numberOfLines={2}
-                >
-                  {lineAcct ? lineAcct.full_path : inflow ? 'Choose an income account' : 'Choose an expense account'}
-                </Text>
-              </Pressable>
-
-              <AmountInput
-                value={line.raw}
-                onChangeText={(raw) => setLine(line.key, { raw })}
-                currency={currency}
-                style={styles.lineAmount}
-                placeholder="0"
-                placeholderTextColor={theme.inkFaint}
-              />
-
-              <TextInput
-                style={styles.lineMemo}
-                placeholder="Note for this line (optional)"
-                placeholderTextColor={theme.inkFaint}
-                value={line.memo}
-                onChangeText={(memo) => setLine(line.key, { memo })}
-              />
+              <View style={styles.lineRight}>
+                <AmountInput
+                  value={line.raw}
+                  onChangeText={(raw) => setLine(line.key, { raw })}
+                  currency={currency}
+                  style={styles.lineAmount}
+                  placeholder="0"
+                  placeholderTextColor={theme.inkFaint}
+                />
+              </View>
             </View>
           );
         })}
 
         <Pressable style={styles.addLine} onPress={() => setLines((prev) => [...prev, newLine()])}>
-          <Icon name="plus" size={16} color={theme.accent} />
-          <Text style={styles.addLineText}>Add another line</Text>
+          <Icon name="add" size={14} color={theme.inkFaint} />
+          <Text style={styles.addLineText}>Add line</Text>
         </Pressable>
 
         <Text style={styles.label}>What is this for</Text>
@@ -211,32 +243,34 @@ export default function Spend() {
           onChangeText={setDescription}
         />
 
-        <Text style={styles.label}>Date</Text>
-        <DateField
-          value={postDate}
-          onChange={setPostDate}
-          caption="Defaults to today. Change it for something you are entering after the fact."
-        />
+        {blockedReason ? <Text style={styles.blocked}>{blockedReason}</Text> : null}
 
-        <View style={styles.totalBox}>
+        <Pressable style={styles.cancel} onPress={() => router.back()}>
+          <Text style={styles.cancelText}>Back to accounts</Text>
+        </Pressable>
+      </ScrollView>
+
+      {/* Sticky, per the handoff, so the running total and the commit are in
+          view while lines are being typed rather than at the end of a scroll. */}
+      <View style={styles.footer}>
+        <View style={styles.footerTotal}>
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={styles.totalValue}>{formatAmount(total, currency)}</Text>
         </View>
-
-        {blockedReason ? <Text style={styles.blocked}>{blockedReason}</Text> : null}
-
         <Pressable
-          style={[styles.btn, (!ready || !canWrite || saving) && styles.btnDisabled]}
+          style={[styles.primary, (!ready || !canWrite || saving) && styles.primaryOff]}
           disabled={!ready || !canWrite || saving}
           onPress={handleSave}
         >
-          <Text style={styles.btnText}>{saving ? 'Saving…' : `Record ${inflow ? 'income' : 'expense'}`}</Text>
+          <Text style={styles.primaryText} numberOfLines={1}>
+            {saved
+              ? 'Saved ✓'
+              : saving
+                ? 'Saving…'
+                : account ? `Save to ${account.name}` : 'Save'}
+          </Text>
         </Pressable>
-
-        <Pressable style={styles.cancel} onPress={() => router.back()}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
-      </ScrollView>
+      </View>
 
       <AccountPicker
         visible={picker !== null}
@@ -270,53 +304,84 @@ export default function Spend() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  scroll: { padding: 20, paddingBottom: 300 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 16 },
-  label: { color: theme.ink, fontSize: 13, fontWeight: '600', marginTop: 22, marginBottom: 8 },
-  selector: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 14,
+  scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 40 },
+  h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, marginBottom: 14 },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  chip: {
+    backgroundColor: theme.surface, borderRadius: 8,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
+    paddingVertical: 9, paddingHorizontal: 12, flexShrink: 1,
   },
-  selectorValue: { color: theme.ink, fontSize: 14, flex: 1, lineHeight: 19 },
-  selectorPlaceholder: { color: theme.inkFaint, fontSize: 14, flex: 1 },
-  selectorCcy: { color: theme.inkSoft, fontSize: 12, marginLeft: 10 },
-  ccyNote: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 8 },
-  lineCard: {
-    backgroundColor: theme.surfaceSoft, borderRadius: 12, padding: 12, marginBottom: 10,
+  chipText: { color: theme.ink, fontSize: 13, fontFamily: fonts.sans },
+  ccyNote: {
+    color: theme.inkFaint, fontSize: 12, lineHeight: 17, marginTop: 10, fontFamily: fonts.sans,
   },
-  lineHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  lineNum: { color: theme.inkFaint, fontSize: 11, letterSpacing: 1 },
-  lineSelector: {
-    backgroundColor: theme.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12,
+  sectionHead: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    paddingTop: 18, paddingBottom: 6,
+    borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong, marginBottom: 10,
+  },
+  sectionLabel: {
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.1, fontFamily: fonts.sansMedium,
+  },
+  sectionCount: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.mono },
+  // The handoff's 1fr / 92px grid.
+  lineRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  lineLeft: {
+    flex: 1, backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong, paddingVertical: 8, paddingHorizontal: 10,
+  },
+  lineTop: { flexDirection: 'row', alignItems: 'center' },
+  lineAcct: { flex: 1, paddingVertical: 2 },
+  lineAcctText: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
+  linePlaceholder: { color: theme.inkFaint, fontSize: 14, fontFamily: fonts.sans },
+  lineRemove: { color: theme.inkFaint, fontSize: 18, paddingLeft: 8, lineHeight: 20 },
+  lineMemo: {
+    color: theme.inkSoft, fontSize: 12, fontFamily: fonts.sans,
+    paddingVertical: 2, marginTop: 2, minHeight: 22,
+  },
+  lineRight: {
+    width: 92, backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
   },
   lineAmount: {
-    backgroundColor: theme.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12,
-    color: theme.ink, fontSize: 18, marginTop: 8, fontVariant: ['tabular-nums'],
+    color: theme.ink, fontSize: 15, fontFamily: fonts.mono, textAlign: 'center',
+    width: '100%', paddingVertical: 8,
   },
-  lineMemo: {
-    backgroundColor: theme.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10,
-    color: theme.ink, fontSize: 13, marginTop: 8,
+  addLine: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderStyle: 'dashed', borderColor: theme.disabled,
+    borderRadius: 10, paddingVertical: 11, marginTop: 2,
   },
-  addLine: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
-  addLineText: { color: theme.accent, fontSize: 14, fontWeight: '600', marginLeft: 6 },
+  addLineText: { color: theme.inkFaint, fontSize: 13, fontFamily: fonts.sans, marginLeft: 6 },
+  label: {
+    color: theme.ink, fontSize: 13, fontFamily: fonts.sansMedium, marginTop: 22, marginBottom: 8,
+  },
   note: {
-    backgroundColor: theme.surface, borderRadius: 10, paddingHorizontal: 14,
-    paddingVertical: 13, color: theme.ink, fontSize: 15,
+    backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
+    color: theme.ink, fontSize: 14, fontFamily: fonts.sans,
+    paddingVertical: 12, paddingHorizontal: 12, minHeight: 46,
   },
-  totalBox: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 24, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.hairline,
+  blocked: { color: theme.coral, fontSize: 12, lineHeight: 17, marginTop: 14, fontFamily: fonts.sans },
+  cancel: { paddingVertical: 14, alignItems: 'center', marginTop: 14 },
+  cancelText: { color: theme.inkFaint, fontSize: 13, fontFamily: fonts.sansMedium },
+  footer: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20,
+    borderTopWidth: 1, borderTopColor: theme.hairlineStrong, backgroundColor: theme.bg,
   },
-  totalLabel: { color: theme.inkFaint, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' },
-  totalValue: { color: theme.ink, fontSize: 22, fontFamily: 'DMSerifDisplay' },
-  blocked: { color: theme.amber, fontSize: 13, lineHeight: 19, marginTop: 20 },
-  btn: {
-    backgroundColor: theme.accent, borderRadius: 12, paddingVertical: 16,
-    alignItems: 'center', marginTop: 22,
+  footerTotal: { flex: 1, marginRight: 14 },
+  totalLabel: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
+  totalValue: {
+    color: theme.ink, fontSize: 22, fontFamily: fonts.monoMedium,
+    fontVariant: ['tabular-nums'], marginTop: 2,
   },
-  btnText: { color: theme.bg, fontSize: 15, fontWeight: '700' },
-  btnDisabled: { opacity: 0.4 },
-  cancel: { alignItems: 'center', paddingVertical: 16 },
-  cancelText: { color: theme.inkSoft, fontSize: 15 },
+  primary: {
+    backgroundColor: theme.ink, borderRadius: 10,
+    paddingVertical: 12, paddingHorizontal: 20, flexShrink: 1,
+  },
+  primaryOff: { opacity: 0.35 },
+  primaryText: { color: theme.bg, fontSize: 14, fontFamily: fonts.sansMedium },
 });

@@ -9,7 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { OverlayModal } from './OverlayModal';
 import { useAccounts } from '../store/accountStore';
-import { theme } from '../constants/theme';
+import { theme, fonts } from '../constants/theme';
 import type { Account } from '../services/api';
 
 type Props = {
@@ -104,33 +104,38 @@ export function AccountPicker({
 }
 
 const styles = StyleSheet.create({
-  title: { color: theme.ink, fontSize: 18, fontWeight: '600', marginBottom: 4 },
-  stale: { color: theme.amber, fontSize: 12, marginBottom: 12, lineHeight: 17 },
+  title: { color: theme.ink, fontSize: 18, fontFamily: fonts.sansMedium, marginBottom: 4 },
+  stale: { color: theme.coral, fontSize: 12, marginBottom: 12, lineHeight: 17, fontFamily: fonts.sans },
   search: {
     backgroundColor: theme.bg,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: theme.ink,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     color: theme.ink,
     fontSize: 15,
+    fontFamily: fonts.sans,
     marginTop: 12,
     marginBottom: 12,
   },
   list: { maxHeight: 320 },
-  empty: { color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingVertical: 24 },
+  empty: {
+    color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingVertical: 24,
+    fontFamily: fonts.sans,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginBottom: 4,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.hairline,
   },
-  rowSelected: { borderWidth: 1, borderColor: theme.moss, backgroundColor: theme.surfaceSoft },
+  rowSelected: { backgroundColor: theme.surfaceSoft },
   rowMain: { flex: 1 },
-  rowPath: { color: theme.ink, fontSize: 14, lineHeight: 19 },
-  rowMeta: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },
-  check: { color: theme.moss, fontSize: 16, marginLeft: 10 },
+  rowPath: { color: theme.ink, fontSize: 14, lineHeight: 19, fontFamily: fonts.sans },
+  rowMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.sans },
+  check: { color: theme.ink, fontSize: 16, marginLeft: 10, fontFamily: fonts.sansSemi },
   cancel: { marginTop: 16, alignItems: 'center', paddingVertical: 14 },
-  cancelText: { color: theme.inkSoft, fontSize: 15 },
+  cancelText: { color: theme.inkFaint, fontSize: 14, fontFamily: fonts.sansMedium },
 });

@@ -22,7 +22,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../constants/theme';
+import { theme, fonts } from '../constants/theme';
 import { todayIso, isValidIsoDate, dateConcern } from '../utils/receiptDate';
 
 /** How the date reads on screen. The ISO value is what gets written. */
@@ -38,11 +38,21 @@ export function DateField({
   value,
   onChange,
   caption,
+  variant = 'field',
 }: {
   value: string;
   onChange: (iso: string) => void;
   /** Screen-specific line under the field, e.g. where the date came from. */
   caption?: string;
+  /**
+   * 'chip' is the compact form the 2026-09-08 handoff puts at the top of
+   * Spend, beside the funding account. It is the same control -- same native
+   * calendar, same warning underneath -- drawn small enough to sit in a row of
+   * two. The full 'field' stays the default because Scan review needs the date
+   * to have visual weight: a misread receipt date is the reason that warning
+   * exists.
+   */
+  variant?: 'field' | 'chip';
 }) {
   const [open, setOpen] = useState(false);
   const concern = dateConcern(value);
@@ -51,17 +61,20 @@ export function DateField({
   // An invalid stored value must still open the picker on something real,
   // otherwise the calendar has nothing to show.
   const asDate = isValidIsoDate(value) ? new Date(`${value}T00:00:00`) : new Date();
+  const chip = variant === 'chip';
 
   return (
     <View>
       <View style={styles.row}>
         <Pressable
-          style={[styles.field, concern ? styles.fieldWarn : null]}
+          style={[chip ? styles.chip : styles.field, concern ? styles.fieldWarn : null]}
           onPress={() => setOpen(true)}
           accessibilityRole="button"
           accessibilityLabel={`Date, ${humanise(value)}. Tap to change.`}
         >
-          <Text style={styles.value}>{humanise(value)}</Text>
+          <Text style={chip ? styles.chipValue : styles.value}>
+            {chip && isToday ? 'Today' : humanise(value)}
+          </Text>
         </Pressable>
         {!isToday ? (
           <Pressable style={styles.today} onPress={() => onChange(todayIso())}>
@@ -99,13 +112,20 @@ export function DateField({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
   field: {
-    backgroundColor: theme.surface, borderRadius: 8,
+    backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingVertical: 12, paddingHorizontal: 14,
   },
+  chip: {
+    backgroundColor: theme.surface, borderRadius: 8,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
+    paddingVertical: 9, paddingHorizontal: 12,
+  },
+  chipValue: { color: theme.ink, fontSize: 13, fontFamily: fonts.sans },
   fieldWarn: { borderWidth: 1, borderColor: theme.amber },
-  value: { color: theme.ink, fontSize: 14 },
+  value: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
   today: { paddingVertical: 10, paddingHorizontal: 14 },
-  todayText: { color: theme.accent, fontSize: 13, fontWeight: '600' },
-  caption: { color: theme.inkFaint, fontSize: 12, marginTop: 6 },
-  warn: { color: theme.amber, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  todayText: { color: theme.ink, fontSize: 13, fontFamily: fonts.sansSemi },
+  caption: { color: theme.inkFaint, fontSize: 12, marginTop: 6, fontFamily: fonts.sans },
+  warn: { color: theme.coral, fontSize: 12, lineHeight: 18, marginTop: 8, fontFamily: fonts.sans },
 });

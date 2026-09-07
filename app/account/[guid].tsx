@@ -14,12 +14,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Icon from '@react-native-vector-icons/material-design-icons';
+import { Icon } from '../../src/components/Icon';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useConnection } from '../../src/store/connectionStore';
 import { getRegister, callRpc, type Register, type RegisterRow } from '../../src/services/api';
 import { formatAmount } from '../../src/utils/currency';
-import { theme } from '../../src/constants/theme';
+import { theme, fonts } from '../../src/constants/theme';
 import { usePrivacy, maskIfHidden } from '../../src/store/privacyStore';
 
 export default function AccountRegister() {
@@ -129,19 +129,54 @@ export default function AccountRegister() {
   const currency = register?.commodity ?? 'IDR';
   const scu = register?.commodity_scu;
 
+  // The account's balance and its cleared portion, for the header.
+  //
+  // The cleared sum is computed here rather than read from the RPC on purpose:
+  // the dot is optimistic, so the figure has to move the instant a dot is
+  // tapped. Reading a server total would leave the header disagreeing with the
+  // row the user just changed until the next refresh.
+  //
+  // Reconciled ('y') counts as cleared. It is a stronger statement than
+  // cleared, not a different one -- a reconciled split has been matched to a
+  // statement, so leaving it out would make the cleared figure smaller than
+  // the truth.
+  const clearedSum = useMemo(
+    () => (register?.rows ?? [])
+      .filter((r) => r.reconcile_state === 'c' || r.reconcile_state === 'y')
+      .reduce((sum, r) => sum + r.quantity, 0),
+    [register],
+  );
+  const currentBalance = withRunning.length ? withRunning[0].balance : register?.opening_balance;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* The whole "< Accounts" chunk is the back target, per the handoff --
+          not just the chevron, which was a 26px glyph with 4px of padding. */}
+      <Pressable onPress={() => router.back()} style={styles.crumbRow} hitSlop={8}>
+        <Icon name="chevronLeft" size={14} color={theme.inkFaint} />
+        <Text style={styles.crumb} numberOfLines={1}>
+          Accounts{register?.account_type ? ` / ${register.account_type}` : ''}
+        </Text>
+      </Pressable>
+
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.back} hitSlop={12}>
-          <Icon name="chevron-left" size={26} color={theme.inkSoft} />
-        </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.h1} numberOfLines={1}>{register?.account_name ?? 'Register'}</Text>
           {register ? (
-            <Text style={styles.sub}>
-              {register.account_type} · {register.commodity} · last {register.window_days} days
+            <Text style={styles.sub} numberOfLines={1}>
+              {register.commodity} · last {register.window_days} days
             </Text>
           ) : null}
+        </View>
+        <View style={styles.headerRight}>
+          <Text style={styles.balance} numberOfLines={1}>
+            {currentBalance != null
+              ? maskIfHidden(formatAmount(currentBalance, currency, scu), hidden)
+              : '—'}
+          </Text>
+          <Text style={styles.clearedNote} numberOfLines={1}>
+            {maskIfHidden(formatAmount(clearedSum, currency, scu), hidden)} cleared
+          </Text>
         </View>
         <Pressable
           onPress={toggleHidden}
@@ -150,14 +185,14 @@ export default function AccountRegister() {
           accessibilityRole="button"
           accessibilityLabel={hidden ? 'Show amounts' : 'Hide amounts'}
         >
-          <Icon name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color={theme.inkSoft} />
+          <Icon name={hidden ? 'hide' : 'show'} size={22} color={theme.inkSoft} />
         </Pressable>
       </View>
 
       <ConnectionBanner />
 
       {loading ? (
-        <ActivityIndicator style={styles.spinner} color={theme.accent} />
+        <ActivityIndicator style={styles.spinner} color={theme.ink} />
       ) : (
         <FlatList
           data={withRunning}
@@ -167,7 +202,7 @@ export default function AccountRegister() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }}
-              tintColor={theme.accent}
+              tintColor={theme.ink}
             />
           }
           ListEmptyComponent={
@@ -187,25 +222,33 @@ export default function AccountRegister() {
             const r = item.row;
             const other = r.other_splits[0];
             const crossCurrency = r.tx_currency && r.tx_currency !== register?.commodity;
+            const cleared = r.reconcile_state === 'c';
+            const reconciled = r.reconcile_state === 'y';
             return (
               <View style={styles.row}>
                 <Pressable
                   onPress={() => toggleCleared(r)}
-                  hitSlop={10}
+                  hitSlop={9}
                   style={styles.dotHit}
                   disabled={busySplit === r.split_guid}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    reconciled
+                      ? 'Reconciled in GnuCash'
+                      : cleared ? 'Cleared. Tap to unclear.' : 'Not cleared. Tap to clear.'
+                  }
                 >
-                  {/* n hollow, c filled, y locked and not interactive. */}
-                  <Icon
-                    name={
-                      r.reconcile_state === 'y'
-                        ? 'lock'
-                        : r.reconcile_state === 'c'
-                          ? 'circle-slice-8'
-                          : 'circle-outline'
-                    }
-                    size={16}
-                    color={r.reconcile_state === 'n' ? theme.inkFaint : theme.moss}
+                  {/* 10px circle, 1.5px ink border, filled when cleared -- the
+                      handoff's dot. Reconciled is filled in verdigris instead:
+                      it is also settled, but it is not something this app can
+                      toggle, and a dot that looks identical to a tappable one
+                      invites a tap that only ever produces an alert. */}
+                  <View
+                    style={[
+                      styles.dot,
+                      reconciled && styles.dotReconciled,
+                      cleared && styles.dotCleared,
+                    ]}
                   />
                 </Pressable>
 
@@ -242,39 +285,84 @@ export default function AccountRegister() {
         />
       )}
 
-      <Text style={styles.footnote}>
-        Tap a dot to mark an entry cleared. Editing and deleting happen in GnuCash desktop.
-      </Text>
+      {/* The handoff's legend. It replaces a sentence that had to describe the
+          dot in words because there was nothing on screen to point at. */}
+      <View style={styles.legend}>
+        <View style={[styles.dot, styles.dotCleared, styles.legendDot]} />
+        <Text style={styles.legendText}>cleared</Text>
+        <View style={[styles.dot, styles.legendDot, styles.legendDotGap]} />
+        <Text style={styles.legendText}>uncleared · tap a dot to toggle</Text>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 14, paddingTop: 4 },
-  back: { padding: 4 },
-  eye: { marginLeft: 8, padding: 4 },
-  headerText: { flex: 1, marginLeft: 4 },
-  h1: { color: theme.ink, fontSize: 21, fontFamily: 'DMSerifDisplay' },
-  sub: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },
+  crumbRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4,
+  },
+  crumb: { color: theme.inkFaint, fontSize: 12, marginLeft: 3, fontFamily: fonts.sans },
+  header: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    paddingHorizontal: 20, paddingBottom: 12, paddingTop: 4,
+    borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong,
+  },
+  headerText: { flex: 1, marginRight: 12 },
+  h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium },
+  sub: { color: theme.inkFaint, fontSize: 12, marginTop: 3, fontFamily: fonts.sans },
+  headerRight: { alignItems: 'flex-end' },
+  balance: {
+    color: theme.ink, fontSize: 22, fontFamily: fonts.monoMedium,
+    fontVariant: ['tabular-nums'],
+  },
+  clearedNote: { color: theme.inkFaint, fontSize: 11, marginTop: 3, fontFamily: fonts.mono },
+  eye: { marginLeft: 12, paddingTop: 4 },
   spinner: { marginTop: 40 },
-  list: { paddingHorizontal: 16, paddingBottom: 30 },
+  list: { paddingHorizontal: 20, paddingBottom: 20 },
   row: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: theme.surface, borderRadius: 10,
-    paddingVertical: 12, paddingHorizontal: 12, marginBottom: 6,
+    paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
   },
-  dotHit: { paddingRight: 12, paddingVertical: 4 },
+  // 28px of touch around a 10px dot, which is the handoff's rule and the
+  // reason the dot can be this small at all.
+  dotHit: {
+    width: 28, height: 28, alignItems: 'center', justifyContent: 'center', marginRight: 4,
+  },
+  dot: {
+    width: 10, height: 10, borderRadius: 5,
+    borderWidth: 1.5, borderColor: theme.ink, backgroundColor: 'transparent',
+  },
+  dotCleared: { backgroundColor: theme.ink },
+  dotReconciled: { backgroundColor: theme.moss, borderColor: theme.moss },
   rowMain: { flex: 1, marginRight: 10 },
-  rowDesc: { color: theme.ink, fontSize: 14 },
-  rowMeta: { color: theme.inkFaint, fontSize: 11, marginTop: 3 },
-  rowCross: { color: theme.inkSoft, fontSize: 10, marginTop: 3 },
+  rowDesc: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
+  rowMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.sans },
+  rowCross: { color: theme.inkSoft, fontSize: 11, marginTop: 2, fontFamily: fonts.sans },
   rowRight: { alignItems: 'flex-end' },
-  rowAmount: { fontSize: 14, fontVariant: ['tabular-nums'] },
+  rowAmount: { fontSize: 14, fontFamily: fonts.mono, fontVariant: ['tabular-nums'] },
   pos: { color: theme.moss },
   neg: { color: theme.ink },
-  rowBalance: { color: theme.inkFaint, fontSize: 11, marginTop: 3, fontVariant: ['tabular-nums'] },
-  empty: { color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingTop: 40, textAlign: 'center' },
-  truncated: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, paddingTop: 16, textAlign: 'center' },
-  footnote: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, paddingHorizontal: 20, paddingBottom: 10 },
+  rowBalance: {
+    color: theme.inkFaint, fontSize: 11, marginTop: 3,
+    fontFamily: fonts.mono, fontVariant: ['tabular-nums'],
+  },
+  empty: {
+    color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingTop: 40,
+    textAlign: 'center', fontFamily: fonts.sans,
+  },
+  truncated: {
+    color: theme.inkFaint, fontSize: 11, lineHeight: 16, paddingTop: 16,
+    textAlign: 'center', fontFamily: fonts.sans,
+  },
+  legend: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12,
+    borderTopWidth: 1, borderTopColor: theme.hairline,
+  },
+  legendDot: { marginRight: 6 },
+  legendDotGap: { marginLeft: 14 },
+  legendText: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.sans },
 });

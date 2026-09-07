@@ -9,7 +9,7 @@ import { normalizeUrl, ping } from '../src/services/api';
 import { rememberInstance } from '../src/services/instances';
 import { useConnection } from '../src/store/connectionStore';
 import { useAccounts } from '../src/store/accountStore';
-import { theme } from '../src/constants/theme';
+import { theme, fonts } from '../src/constants/theme';
 
 export default function Connect() {
   const router = useRouter();
@@ -142,12 +142,13 @@ export default function Connect() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   scroll: { padding: 24, paddingBottom: 300 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 10 },
+  h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, marginBottom: 10 },
   lede: { color: theme.inkSoft, fontSize: 14, lineHeight: 21, marginBottom: 28 },
-  label: { color: theme.ink, fontSize: 13, fontWeight: '600', marginBottom: 8, marginTop: 12 },
+  label: { color: theme.ink, fontSize: 13, fontFamily: fonts.sansMedium, marginBottom: 8, marginTop: 12 },
   input: {
     backgroundColor: theme.surface,
     borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingHorizontal: 14,
     paddingVertical: 13,
     color: theme.ink,
@@ -168,13 +169,13 @@ const styles = StyleSheet.create({
   resultText: { color: theme.inkSoft, fontSize: 13, lineHeight: 19, flex: 1 },
   btn: {
     backgroundColor: theme.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 12,
   },
-  btnText: { color: theme.bg, fontSize: 15, fontWeight: '700' },
+  btnText: { color: theme.bg, fontSize: 15, fontFamily: fonts.sansMedium },
   btnGhost: { borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 24 },
-  btnGhostText: { color: theme.accent, fontSize: 15, fontWeight: '600' },
+  btnGhostText: { color: theme.accent, fontSize: 15, fontFamily: fonts.sansMedium },
   btnDisabled: { opacity: 0.4 },
 });

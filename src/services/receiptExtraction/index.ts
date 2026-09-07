@@ -31,7 +31,7 @@ import { allocateAmounts } from './allocate';
 import { callGemini, DEFAULT_GEMINI_MODEL } from './gemini';
 import type { AllocatedItem } from './types';
 
-export { DEFAULT_GEMINI_MODEL } from './gemini';
+export { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from './gemini';
 export type { RawItem, AllocatedItem, RawExtraction } from './types';
 
 export type ReceiptScan = {

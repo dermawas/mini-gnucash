@@ -20,12 +20,12 @@
 
 import { useMemo, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert,
+  View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import Icon from '@react-native-vector-icons/material-design-icons';
+import { Icon } from '../../src/components/Icon';
 import { AccountPicker } from '../../src/components/AccountPicker';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts, ASSET_TYPES, EXPENSE_TYPES } from '../../src/store/accountStore';
@@ -39,7 +39,7 @@ import { generateTransactionId } from '../../src/utils/idempotency';
 import { formatAmount, roundingUnit } from '../../src/utils/currency';
 import { postDate, todayIso, isValidIsoDate } from '../../src/utils/receiptDate';
 import { DateField } from '../../src/components/DateField';
-import { theme } from '../../src/constants/theme';
+import { theme, fonts } from '../../src/constants/theme';
 
 type Line = {
   key: string;
@@ -68,6 +68,11 @@ export default function ScanReview() {
   const [scan, setScan] = useState<ReceiptScan | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [scanning, setScanning] = useState(false);
+  // The handoff puts a strip of the receipt above the lines, so a suspicious
+  // figure can be checked against the paper without leaving the screen. Only
+  // the local URI is held; the base64 that goes to Google is not kept.
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBig, setPhotoBig] = useState(false);
   const [saving, setSaving] = useState(false);
   // null means "whatever the receipt said"; a string is a correction the user
   // typed. Kept separate so re-scanning cleanly discards an edit that belonged
@@ -150,6 +155,8 @@ export default function ScanReview() {
 
     if (picked.canceled || !picked.assets?.length) return;
     const asset = picked.assets[0];
+    setPhotoUri(asset.uri ?? null);
+    setPhotoBig(false);
     if (!asset.base64) {
       Alert.alert('Could not read that image', 'Try again, or pick a different photo.');
       return;
@@ -311,7 +318,7 @@ export default function ScanReview() {
         {account ? (
           <View style={styles.scanRow}>
             <Pressable style={styles.scanBtn} disabled={scanning} onPress={() => runScan('camera')}>
-              <Icon name="camera-outline" size={18} color={theme.accent} />
+              <Icon name="scan" size={18} color={theme.ink} />
               <Text style={styles.scanBtnText}>Photograph</Text>
             </Pressable>
             <Pressable
@@ -319,7 +326,7 @@ export default function ScanReview() {
               disabled={scanning}
               onPress={() => runScan('library')}
             >
-              <Icon name="image-outline" size={18} color={theme.accent} />
+              <Icon name="receipt" size={18} color={theme.ink} />
               <Text style={styles.scanBtnText}>Choose photo</Text>
             </Pressable>
           </View>
@@ -327,7 +334,7 @@ export default function ScanReview() {
 
         {scanning ? (
           <View style={styles.scanning}>
-            <ActivityIndicator color={theme.accent} />
+            <ActivityIndicator color={theme.ink} />
             <Text style={styles.scanningText}>
               Reading the receipt. This is the one call that leaves your network, and it can take
               up to a minute.
@@ -372,51 +379,91 @@ export default function ScanReview() {
               </Text>
             ) : null}
 
-            <Text style={styles.label}>Lines</Text>
+            {photoUri ? (
+              <Pressable onPress={() => setPhotoBig((b) => !b)} style={styles.photoWrap}>
+                <Image
+                  source={{ uri: photoUri }}
+                  style={[styles.photo, photoBig && styles.photoBig]}
+                  resizeMode="cover"
+                />
+              </Pressable>
+            ) : null}
+
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionLabel}>DETECTED LINES</Text>
+              <Text style={styles.sectionCount}>
+                {payable.length - unassigned} of {payable.length}
+              </Text>
+            </View>
+
             {lines.map((line) => {
               const lineAcct = line.accountGuid ? byGuid(line.accountGuid) : undefined;
+              const zero = line.amount <= 0;
+              // "Unsure" in the handoff's sense: nothing chosen yet, or a
+              // proposal that came from the receipt text alone. The two
+              // memory-backed bases are the ones the user has confirmed
+              // before, so they do not get the copper treatment.
+              const unsure = !zero && (!lineAcct || (line.proposed && line.basis === 'tokens'));
+              const settled = !zero && !!lineAcct && !unsure;
               return (
-                <View key={line.key} style={styles.lineCard}>
-                  <View style={styles.lineTop}>
-                    <Text style={styles.lineName} numberOfLines={2}>{line.name}</Text>
+                <View key={line.key}>
+                  <Pressable
+                    style={({ pressed }) => [styles.lineRow, pressed && styles.lineRowPressed]}
+                    onPress={() => (zero ? undefined : setPicker({ kind: 'line', key: line.key }))}
+                    disabled={zero}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      zero
+                        ? `${line.name}, no amount, not written`
+                        : `${line.name}, ${lineAcct ? lineAcct.full_path : 'no account'}. Tap to choose an account.`
+                    }
+                  >
+                    {/* The handoff's 20px checkbox. Here it reports whether a
+                        line is ready to write rather than whether it has been
+                        ticked: this screen has no accept/reject step, because
+                        the funding split is derived from the sum of the lines
+                        and dropping one would post a total nobody agreed to. */}
+                    <View style={[styles.box, settled && styles.boxOn, zero && styles.boxOff]}>
+                      {settled ? <Text style={styles.boxCheck}>✓</Text> : null}
+                    </View>
+
+                    <View style={styles.lineMain}>
+                      <Text style={styles.lineName} numberOfLines={2}>{line.name}</Text>
+                      <Text
+                        style={[styles.lineAcct, unsure && styles.lineAcctUnsure]}
+                        numberOfLines={1}
+                      >
+                        {zero
+                          ? 'no amount — not written'
+                          : lineAcct
+                            ? `→ ${lineAcct.full_path}`
+                            : '→ choose an account'}
+                      </Text>
+                    </View>
+
                     <Text style={styles.lineAmount}>
                       {formatAmount(line.amount, currency ?? 'IDR', scu)}
                     </Text>
-                  </View>
-                  {line.amount > 0 ? (
-                    <>
-                      <Pressable
-                        style={styles.lineSelector}
-                        onPress={() => setPicker({ kind: 'line', key: line.key })}
-                      >
-                        <Text
-                          style={lineAcct ? styles.selectorValue : styles.selectorPlaceholder}
-                          numberOfLines={2}
-                        >
-                          {lineAcct ? lineAcct.full_path : 'Choose an account'}
-                        </Text>
-                      </Pressable>
-                      {lineAcct && line.proposed ? (
-                        <Text style={styles.proposed}>
-                          {line.basis === 'item'
-                            ? 'You chose this for this item here before.'
-                            : line.basis === 'merchant'
-                              ? 'You have always chosen this account at this merchant.'
-                              : 'Suggested from the receipt text — check it before saving.'}
-                        </Text>
-                      ) : null}
-                      {!lineAcct ? (
-                        <Text style={styles.unmatched}>
-                          No confident match. Pick one — this app cannot create accounts yet.
-                        </Text>
-                      ) : null}
-                    </>
-                  ) : (
+                  </Pressable>
+
+                  {/* Kept verbatim from before the redesign. Which of these
+                      three sentences is showing is the difference between a
+                      guess and a confirmed choice, and it is the sentence that
+                      catches a wrong account before it reaches the book. */}
+                  {!zero && lineAcct && line.proposed ? (
                     <Text style={styles.proposed}>
-                      This line comes to nothing — free on the receipt, or discounted away — so
-                      it needs no account and is not written to the ledger.
+                      {line.basis === 'item'
+                        ? 'You chose this for this item here before.'
+                        : line.basis === 'merchant'
+                          ? 'You have always chosen this account at this merchant.'
+                          : 'Suggested from the receipt text — check it before saving.'}
                     </Text>
-                  )}
+                  ) : null}
+                  {!zero && !lineAcct ? (
+                    <Text style={styles.unmatched}>
+                      No confident match. Pick one — this app cannot create accounts yet.
+                    </Text>
+                  ) : null}
                 </View>
               );
             })}
@@ -513,56 +560,103 @@ export default function ScanReview() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   scroll: { padding: 20, paddingBottom: 60 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 6 },
-  label: { color: theme.ink, fontSize: 13, fontWeight: '600', marginTop: 22, marginBottom: 8 },
-  note: { color: theme.inkSoft, fontSize: 12, lineHeight: 17, marginTop: 8 },
-  warn: { color: theme.amber, fontSize: 12, lineHeight: 18, marginTop: 12 },
+  h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, marginBottom: 6 },
+  label: {
+    color: theme.ink, fontSize: 13, fontFamily: fonts.sansMedium, marginTop: 22, marginBottom: 8,
+  },
+  note: { color: theme.inkSoft, fontSize: 12, lineHeight: 17, marginTop: 8, fontFamily: fonts.sans },
+  warn: { color: theme.coral, fontSize: 12, lineHeight: 18, marginTop: 12, fontFamily: fonts.sans },
   selector: {
     backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingVertical: 14, paddingHorizontal: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  selectorValue: { color: theme.ink, fontSize: 14, flex: 1, marginRight: 10 },
-  selectorPlaceholder: { color: theme.inkFaint, fontSize: 14, flex: 1, marginRight: 10 },
-  selectorCcy: { color: theme.inkSoft, fontSize: 12 },
+  selectorValue: {
+    color: theme.ink, fontSize: 14, flex: 1, marginRight: 10, fontFamily: fonts.sans,
+  },
+  selectorPlaceholder: {
+    color: theme.inkFaint, fontSize: 14, flex: 1, marginRight: 10, fontFamily: fonts.sans,
+  },
+  selectorCcy: { color: theme.inkSoft, fontSize: 12, fontFamily: fonts.mono },
   scanRow: { flexDirection: 'row', marginTop: 16 },
   scanBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: theme.surface, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingVertical: 14, marginHorizontal: 4, minHeight: 48,
   },
-  scanBtnText: { color: theme.accent, fontSize: 14, fontWeight: '600', marginLeft: 8 },
+  scanBtnText: { color: theme.ink, fontSize: 14, fontFamily: fonts.sansMedium, marginLeft: 8 },
   scanning: { alignItems: 'center', marginTop: 24 },
   scanningText: {
     color: theme.inkSoft, fontSize: 12, lineHeight: 18,
-    textAlign: 'center', marginTop: 12,
+    textAlign: 'center', marginTop: 12, fontFamily: fonts.sans,
   },
   receiptHead: { marginTop: 22 },
-  merchant: { color: theme.ink, fontSize: 18, fontFamily: 'DMSerifDisplay' },
-  receiptMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 6 },
+  merchant: { color: theme.ink, fontSize: 18, fontFamily: fonts.sansMedium },
+  receiptMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 6, fontFamily: fonts.sans },
   dateWrap: { marginTop: 8 },
-  lineCard: { backgroundColor: theme.surfaceSoft, borderRadius: 10, padding: 12, marginBottom: 8 },
-  lineTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  lineName: { color: theme.ink, fontSize: 14, flex: 1, marginRight: 10 },
-  lineAmount: { color: theme.ink, fontSize: 14, fontVariant: ['tabular-nums'] },
-  lineSelector: {
-    backgroundColor: theme.surface, borderRadius: 8,
-    paddingVertical: 12, paddingHorizontal: 12, minHeight: 44, justifyContent: 'center',
+  // The handoff's photo strip: 120 tall, radius 12, hairline border. Tapping
+  // it grows the strip in place rather than opening a viewer -- the point is
+  // to check a figure against the paper without losing the line you were on.
+  photoWrap: { marginTop: 18 },
+  photo: {
+    width: '100%', height: 120, borderRadius: 12,
+    borderWidth: 1, borderColor: theme.hairlineStrong, backgroundColor: theme.surfaceSoft,
   },
-  proposed: { color: theme.inkFaint, fontSize: 11, marginTop: 6 },
-  unmatched: { color: theme.amber, fontSize: 11, lineHeight: 16, marginTop: 6 },
+  photoBig: { height: 360 },
+  sectionHead: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    marginTop: 22, paddingBottom: 6,
+    borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong,
+  },
+  sectionLabel: {
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.1, fontFamily: fonts.sansMedium,
+  },
+  sectionCount: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.mono },
+  lineRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
+  },
+  lineRowPressed: { backgroundColor: theme.pressed },
+  box: {
+    width: 20, height: 20, borderRadius: 6,
+    borderWidth: 1.5, borderColor: theme.ink,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  boxOn: { backgroundColor: theme.ink },
+  boxOff: { borderColor: theme.disabled },
+  boxCheck: { color: theme.bg, fontSize: 12, lineHeight: 14, fontFamily: fonts.sansSemi },
+  lineMain: { flex: 1, marginRight: 10 },
+  lineName: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
+  lineAcct: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.sans },
+  lineAcctUnsure: { color: theme.coral },
+  lineAmount: {
+    color: theme.ink, fontSize: 14, fontFamily: fonts.mono, fontVariant: ['tabular-nums'],
+  },
+  proposed: {
+    color: theme.inkFaint, fontSize: 11, lineHeight: 16,
+    marginTop: 4, marginBottom: 6, marginLeft: 32, fontFamily: fonts.sans,
+  },
+  unmatched: {
+    color: theme.coral, fontSize: 11, lineHeight: 16,
+    marginTop: 4, marginBottom: 6, marginLeft: 32, fontFamily: fonts.sans,
+  },
   totalRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.hairline,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: theme.hairlineStrong,
   },
-  totalLabel: { color: theme.inkSoft, fontSize: 13, fontWeight: '600' },
-  totalValue: { color: theme.ink, fontSize: 18, fontVariant: ['tabular-nums'] },
+  totalLabel: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
+  totalValue: {
+    color: theme.ink, fontSize: 22, fontFamily: fonts.monoMedium, fontVariant: ['tabular-nums'],
+  },
   save: {
-    backgroundColor: theme.accent, borderRadius: 12,
-    paddingVertical: 16, alignItems: 'center', marginTop: 22,
+    backgroundColor: theme.ink, borderRadius: 10,
+    paddingVertical: 14, alignItems: 'center', marginTop: 22,
   },
-  saveOff: { opacity: 0.4 },
-  saveText: { color: theme.bg, fontSize: 15, fontWeight: '700' },
+  saveOff: { opacity: 0.35 },
+  saveText: { color: theme.bg, fontSize: 14, fontFamily: fonts.sansMedium },
   cancel: { alignItems: 'center', paddingVertical: 16, marginTop: 6 },
-  cancelText: { color: theme.inkSoft, fontSize: 14 },
+  cancelText: { color: theme.inkFaint, fontSize: 13, fontFamily: fonts.sansMedium },
 });

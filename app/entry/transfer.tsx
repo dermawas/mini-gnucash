@@ -30,7 +30,7 @@ import { useConnection } from '../../src/store/connectionStore';
 import { transfer } from '../../src/services/api';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
-import { theme } from '../../src/constants/theme';
+import { theme, fonts } from '../../src/constants/theme';
 import type { Account } from '../../src/services/api';
 import { DateField } from '../../src/components/DateField';
 import { todayIso } from '../../src/utils/receiptDate';
@@ -253,13 +253,14 @@ export default function Transfer() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   scroll: { padding: 20, paddingBottom: 300 },
-  h1: { color: theme.ink, fontSize: 26, fontFamily: 'DMSerifDisplay', marginBottom: 16 },
-  label: { color: theme.ink, fontSize: 13, fontWeight: '600', marginTop: 20, marginBottom: 8 },
+  h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, marginBottom: 16 },
+  label: { color: theme.ink, fontSize: 13, fontFamily: fonts.sansMedium, marginTop: 20, marginBottom: 8 },
   selector: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.surface,
     borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
@@ -269,16 +270,19 @@ const styles = StyleSheet.create({
   amount: {
     backgroundColor: theme.surface,
     borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingHorizontal: 14,
     paddingVertical: 14,
     color: theme.ink,
     fontSize: 20,
     marginTop: 10,
+    fontFamily: fonts.mono,
     fontVariant: ['tabular-nums'],
   },
   note: {
     backgroundColor: theme.surface,
     borderRadius: 10,
+    borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingHorizontal: 14,
     paddingVertical: 13,
     color: theme.ink,
@@ -292,19 +296,19 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   rateLabel: { color: theme.inkFaint, fontSize: 11, letterSpacing: 1, marginBottom: 8 },
-  rateMain: { color: theme.ink, fontSize: 17, fontVariant: ['tabular-nums'] },
-  rateInverse: { color: theme.inkSoft, fontSize: 13, marginTop: 4, fontVariant: ['tabular-nums'] },
+  rateMain: { color: theme.ink, fontSize: 17, fontFamily: fonts.mono, fontVariant: ['tabular-nums'] },
+  rateInverse: { color: theme.inkSoft, fontSize: 13, marginTop: 4, fontFamily: fonts.mono, fontVariant: ['tabular-nums'] },
   ratePending: { color: theme.inkFaint, fontSize: 14 },
   rateHint: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 10 },
   blocked: { color: theme.amber, fontSize: 13, lineHeight: 19, marginTop: 24 },
   btn: {
     backgroundColor: theme.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 24,
   },
-  btnText: { color: theme.bg, fontSize: 15, fontWeight: '700' },
+  btnText: { color: theme.bg, fontSize: 15, fontFamily: fonts.sansMedium },
   btnDisabled: { opacity: 0.4 },
   cancel: { alignItems: 'center', paddingVertical: 16, marginTop: 4 },
   cancelText: { color: theme.inkSoft, fontSize: 15 },
