@@ -20,7 +20,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert, TextInput,
+  View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -37,7 +37,8 @@ import { matchLine } from '../../src/services/accountMatch';
 import { loadMemory, recall, remember } from '../../src/services/merchantMemory';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { formatAmount, roundingUnit } from '../../src/utils/currency';
-import { postDate, todayIso, isValidIsoDate, dateConcern } from '../../src/utils/receiptDate';
+import { postDate, todayIso, isValidIsoDate } from '../../src/utils/receiptDate';
+import { DateField } from '../../src/components/DateField';
 import { theme } from '../../src/constants/theme';
 
 type Line = {
@@ -111,7 +112,6 @@ export default function ScanReview() {
 
   const extractedDate = scan ? postDate(scan.date) : null;
   const effectiveDate = dateEdit ?? extractedDate?.date ?? todayIso();
-  const dateProblem = scan ? dateConcern(effectiveDate) : null;
 
   // An unparseable date blocks the save -- the RPC would reject it anyway, and
   // failing here says why. A date that is merely suspicious does not block:
@@ -341,31 +341,19 @@ export default function ScanReview() {
               <Text style={styles.merchant} numberOfLines={2}>
                 {scan.merchant || 'Unknown merchant'}
               </Text>
-              <View style={styles.dateRow}>
-                <TextInput
-                  style={[styles.dateInput, dateProblem ? styles.dateInputWarn : null]}
+              <View style={styles.dateWrap}>
+                <DateField
                   value={effectiveDate}
-                  onChangeText={setDateEdit}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={theme.inkFaint}
-                  keyboardType="numbers-and-punctuation"
-                  autoCorrect={false}
-                  maxLength={10}
+                  onChange={setDateEdit}
+                  caption={
+                    dateEdit !== null
+                      ? 'You set this date.'
+                      : extractedDate?.fellBack
+                        ? 'No readable date on the receipt — using today. Change it if that is wrong.'
+                        : 'Read from the receipt. Check it before saving.'
+                  }
                 />
-                {effectiveDate !== todayIso() ? (
-                  <Pressable style={styles.dateToday} onPress={() => setDateEdit(todayIso())}>
-                    <Text style={styles.dateTodayText}>Today</Text>
-                  </Pressable>
-                ) : null}
               </View>
-              <Text style={styles.receiptMeta}>
-                {dateEdit !== null
-                  ? 'You set this date.'
-                  : extractedDate?.fellBack
-                    ? 'No readable date on the receipt — using today. Change it if that is wrong.'
-                    : 'Read from the receipt. Check it before saving.'}
-              </Text>
-              {dateProblem ? <Text style={styles.warn}>{dateProblem}</Text> : null}
             </View>
 
             {currencyMismatch ? (
@@ -552,16 +540,7 @@ const styles = StyleSheet.create({
   receiptHead: { marginTop: 22 },
   merchant: { color: theme.ink, fontSize: 18, fontFamily: 'DMSerifDisplay' },
   receiptMeta: { color: theme.inkFaint, fontSize: 12, marginTop: 6 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  dateInput: {
-    backgroundColor: theme.surface, borderRadius: 8,
-    paddingVertical: 10, paddingHorizontal: 12,
-    color: theme.ink, fontSize: 14, fontVariant: ['tabular-nums'],
-    minWidth: 140,
-  },
-  dateInputWarn: { borderWidth: 1, borderColor: theme.amber },
-  dateToday: { paddingVertical: 10, paddingHorizontal: 14 },
-  dateTodayText: { color: theme.accent, fontSize: 13, fontWeight: '600' },
+  dateWrap: { marginTop: 8 },
   lineCard: { backgroundColor: theme.surfaceSoft, borderRadius: 10, padding: 12, marginBottom: 8 },
   lineTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   lineName: { color: theme.ink, fontSize: 14, flex: 1, marginRight: 10 },

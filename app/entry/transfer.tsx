@@ -32,12 +32,9 @@ import { generateTransactionId } from '../../src/utils/idempotency';
 import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
 import type { Account } from '../../src/services/api';
+import { DateField } from '../../src/components/DateField';
+import { todayIso } from '../../src/utils/receiptDate';
 
-function today(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 export default function Transfer() {
   const router = useRouter();
@@ -53,6 +50,9 @@ export default function Transfer() {
   const [description, setDescription] = useState('');
   const [picker, setPicker] = useState<'from' | 'to' | null>(null);
   const [saving, setSaving] = useState(false);
+  // Previously hardcoded to today(), so a transfer done last week could not
+  // be entered from the phone at all.
+  const [postDate, setPostDate] = useState<string>(todayIso());
 
   const from = fromGuid ? byGuid(fromGuid) : undefined;
   const to = toGuid ? byGuid(toGuid) : undefined;
@@ -86,7 +86,7 @@ export default function Transfer() {
       fromAmount,
       toGuid: to.guid,
       toAmount,
-      postDate: today(),
+      postDate,
       description: description.trim(),
     });
 
@@ -185,6 +185,13 @@ export default function Transfer() {
           placeholderTextColor={theme.inkFaint}
           value={description}
           onChangeText={setDescription}
+        />
+
+        <Text style={styles.label}>Date</Text>
+        <DateField
+          value={postDate}
+          onChange={setPostDate}
+          caption="Defaults to today. Change it for a transfer you are recording after the fact."
         />
 
         {/* Read-only. See the header of this file before changing that. */}

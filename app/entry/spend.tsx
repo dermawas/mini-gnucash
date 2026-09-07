@@ -22,14 +22,11 @@ import { callRpc, markInFlight, clearInFlight, type Account } from '../../src/se
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
 import { theme } from '../../src/constants/theme';
+import { DateField } from '../../src/components/DateField';
+import { todayIso } from '../../src/utils/receiptDate';
 
 type Line = { key: string; accountGuid: string | null; raw: string; memo: string };
 
-function today(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 let lineSeq = 0;
 const newLine = (): Line => ({ key: `l${++lineSeq}`, accountGuid: null, raw: '', memo: '' });
@@ -49,6 +46,8 @@ export default function Spend() {
   const [description, setDescription] = useState('');
   const [picker, setPicker] = useState<{ kind: 'account' } | { kind: 'line'; key: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  // Previously hardcoded to today(), so nothing backdated could be entered.
+  const [postDate, setPostDate] = useState<string>(todayIso());
 
   const account = acctGuid ? byGuid(acctGuid) : undefined;
   const currency = account?.commodity_mnemonic ?? 'IDR';
@@ -91,7 +90,7 @@ export default function Spend() {
           amount: parseCurrencyInput(l.raw),
           memo: l.memo.trim(),
         })),
-        p_post_date: today(),
+        p_post_date: postDate,
         p_description: description.trim(),
       },
     );
@@ -210,6 +209,13 @@ export default function Spend() {
           placeholderTextColor={theme.inkFaint}
           value={description}
           onChangeText={setDescription}
+        />
+
+        <Text style={styles.label}>Date</Text>
+        <DateField
+          value={postDate}
+          onChange={setPostDate}
+          caption="Defaults to today. Change it for something you are entering after the fact."
         />
 
         <View style={styles.totalBox}>
