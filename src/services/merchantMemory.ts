@@ -30,6 +30,27 @@
 //   3. **Deterministic.** Same store, same merchant, same item, same answer --
 //      ties broken by guid so there is no iteration-order dependence.
 //
+// WHAT THIS DOES NOT SURVIVE, measured on a phone 2026-09-07.
+//
+// The merchant key is an exact match on normalised text, and the model does
+// not return a stable merchant name. One Holland Bakery photo, scanned twice
+// twenty minutes apart, came back as `HOLLAND BAKERY` and then
+// `HOLLAND BAKERY PONDOK BAMBU`. Those are different keys, so `recall` returns
+// null at the `store[mKey]` miss below and the item is never consulted -- even
+// though the item key IS stable (`2018-Donat Mini Box` and `Donat Mini Box`
+// both normalise to `donat mini box`, because `tokenize` drops the code).
+//
+// So the instability this file was written to defeat also afflicts the string
+// it keys itself on. It was invisible offline because the offline exercise fed
+// both runs the same merchant name. In practice this memory is stored and
+// almost never recalled; Settings says so.
+//
+// Deliberately not patched with a fuzzy merchant match. The three answers that
+// motivated this -- `Dining out:Bakery`, `Dining out:Snacks`, `Food Delivery`
+// -- collapse into one account under a coarser chart of accounts, and the item
+// name already reaches the book as the split memo, which is what you would
+// search on. Fix the chart, not the key. See docs/TODO.md.
+
 // This is app state, not ledger state. It lives in AsyncStorage beside the
 // account cache, holds no amounts and no credentials, and losing it costs
 // nothing but a few proposals. The book remains the only record of anything.

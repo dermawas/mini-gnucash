@@ -195,8 +195,8 @@ export default function Settings() {
 
           <Text style={styles.hint}>
             {merchants > 0
-              ? `Remembered which account you chose at ${merchants} merchant${merchants === 1 ? '' : 's'}. Kept on this phone, never written to your book and never sent anywhere.`
-              : 'Nothing remembered yet. Choosing an account for a scanned line teaches this phone what you meant, so the next receipt from that shop proposes the same one.'}
+              ? `Remembered which account you chose at ${merchants} merchant${merchants === 1 ? '' : 's'}. Kept on this phone, never written to your book and never sent anywhere. It is only recalled when a later scan reads the shop name the same way, and often it does not.`
+              : 'Nothing remembered yet. Choosing an account for a scanned line records what you meant, though a scan only recalls it when the shop name comes back the same, and often it does not.'}
           </Text>
           {merchants > 0 ? (
             <Pressable
