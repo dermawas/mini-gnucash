@@ -224,10 +224,6 @@ export default function Accounts() {
               <Icon name="transfer" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Transfer</Text>
             </Pressable>
-            <Pressable style={styles.action} onPress={() => router.push('/scan/review')}>
-              <Icon name="scan" size={16} color={theme.ink} />
-              <Text style={styles.actionText} numberOfLines={1}>Scan</Text>
-            </Pressable>
           </View>
         </View>
       )}
