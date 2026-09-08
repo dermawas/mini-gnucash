@@ -3,11 +3,11 @@
 //
 // The post date for anything this app writes.
 //
-// One component for all three writing screens -- Scan review, Spend and
-// Transfer -- so the date behaves identically wherever it is set, and a fix
-// lands in one place. Spend and Transfer had no date control at all before
-// this: both hardcoded today(), so nothing backdated could be entered from the
-// phone.
+// One component wherever this app writes -- which is now the single Entry
+// screen, in its `chip` variant. It was built when Scan review, Spend and
+// Transfer were three separate screens with three separate ideas about dates,
+// two of which hardcoded today() and so could not record anything after the
+// fact at all.
 //
 // A native calendar, not a text box. The first version of this was a
 // `TextInput` expecting YYYY-MM-DD, and driving it proved how bad that is:
@@ -23,6 +23,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme, fonts } from '../constants/theme';
+import { Chip } from './Chip';
 import { todayIso, isValidIsoDate, dateConcern } from '../utils/receiptDate';
 
 /** How the date reads on screen. The ISO value is what gets written. */
@@ -66,16 +67,23 @@ export function DateField({
   return (
     <View>
       <View style={styles.row}>
-        <Pressable
-          style={[chip ? styles.chip : styles.field, concern ? styles.fieldWarn : null]}
-          onPress={() => setOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`Date, ${humanise(value)}. Tap to change.`}
-        >
-          <Text style={chip ? styles.chipValue : styles.value}>
-            {chip && isToday ? 'Today' : humanise(value)}
-          </Text>
-        </Pressable>
+        {chip ? (
+          <Chip
+            label={isToday ? 'Today' : humanise(value)}
+            warn={!!concern}
+            onPress={() => setOpen(true)}
+            accessibilityLabel={`Date, ${humanise(value)}. Tap to change.`}
+          />
+        ) : (
+          <Pressable
+            style={[styles.field, concern ? styles.fieldWarn : null]}
+            onPress={() => setOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Date, ${humanise(value)}. Tap to change.`}
+          >
+            <Text style={styles.value}>{humanise(value)}</Text>
+          </Pressable>
+        )}
         {!isToday ? (
           <Pressable style={styles.today} onPress={() => onChange(todayIso())}>
             <Text style={styles.todayText}>Today</Text>
@@ -116,12 +124,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.hairlineStrong,
     paddingVertical: 12, paddingHorizontal: 14,
   },
-  chip: {
-    backgroundColor: theme.surface, borderRadius: 8,
-    borderWidth: 1, borderColor: theme.hairlineStrong,
-    paddingVertical: 9, paddingHorizontal: 12,
-  },
-  chipValue: { color: theme.ink, fontSize: 13, fontFamily: fonts.sans },
   fieldWarn: { borderWidth: 1, borderColor: theme.amber },
   value: { color: theme.ink, fontSize: 14, fontFamily: fonts.sans },
   today: { paddingVertical: 10, paddingHorizontal: 14 },

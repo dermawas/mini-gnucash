@@ -20,9 +20,10 @@
 // shape that is both convenient and honest about a list that Google changes.
 
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Icon } from './Icon';
 import { theme, fonts } from '../constants/theme';
+import { TextField } from './TextField';
 
 export type Suggestion = { id: string; note: string };
 
@@ -100,12 +101,13 @@ export function SettingRow({
         </View>
       ) : null}
 
-      <TextInput
-        style={[styles.input, mono && styles.inputMono]}
+      <TextField
+        variant="active"
+        mono={mono}
+        style={styles.input}
         value={draft}
         onChangeText={setDraft}
         placeholder={placeholder}
-        placeholderTextColor={theme.inkFaint}
         autoCapitalize="none"
         autoCorrect={false}
         secureTextEntry={secure}
@@ -168,13 +170,8 @@ const styles = StyleSheet.create({
     color: theme.inkFaint, fontSize: 11, lineHeight: 15, marginTop: 3, fontFamily: fonts.sans,
   },
   check: { color: theme.ink, fontSize: 14, fontFamily: fonts.sansSemi },
-  input: {
-    backgroundColor: theme.bg, borderRadius: 8,
-    borderWidth: 1.5, borderColor: theme.ink,
-    color: theme.ink, fontSize: 15, fontFamily: fonts.sans,
-    paddingVertical: 10, paddingHorizontal: 12, marginTop: 8, minHeight: 44,
-  },
-  inputMono: { fontFamily: fonts.mono },
+  // Spacing only. The field itself is TextField's 'active' variant.
+  input: { marginTop: 8 },
   help: { color: theme.inkFaint, fontSize: 12, lineHeight: 17, marginTop: 8, fontFamily: fonts.sans },
   actions: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   spacer: { flex: 1 },

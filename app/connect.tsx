@@ -2,12 +2,13 @@
 // Copyright (C) 2026 Forstra Digital
 
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { normalizeUrl, ping } from '../src/services/api';
 import { rememberInstance } from '../src/services/instances';
 import { useConnection } from '../src/store/connectionStore';
+import { TextField } from '../src/components/TextField';
 import { useAccounts } from '../src/store/accountStore';
 import { theme, fonts } from '../src/constants/theme';
 
@@ -67,10 +68,8 @@ export default function Connect() {
         </Text>
 
         <Text style={styles.label}>Name this ledger</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
           placeholder="e.g. Production, or Dev clone"
-          placeholderTextColor={theme.inkFaint}
           value={name}
           onChangeText={setName}
           autoCapitalize="words"
@@ -82,10 +81,8 @@ export default function Connect() {
         </Text>
 
         <Text style={styles.label}>PostgREST URL</Text>
-        <TextInput
-          style={styles.input}
+        <TextField
           placeholder="http://10.8.0.1:3003"
-          placeholderTextColor={theme.inkFaint}
           value={url}
           onChangeText={setUrl}
           autoCapitalize="none"
@@ -98,10 +95,9 @@ export default function Connect() {
         </Text>
 
         <Text style={styles.label}>JWT token</Text>
-        <TextInput
-          style={[styles.input, styles.inputMultiline]}
+        <TextField
+          mono
           placeholder="eyJhbGciOi..."
-          placeholderTextColor={theme.inkFaint}
           value={token}
           onChangeText={setToken}
           autoCapitalize="none"
@@ -145,16 +141,6 @@ const styles = StyleSheet.create({
   h1: { color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, marginBottom: 10 },
   lede: { color: theme.inkSoft, fontSize: 14, lineHeight: 21, marginBottom: 28 },
   label: { color: theme.ink, fontSize: 13, fontFamily: fonts.sansMedium, marginBottom: 8, marginTop: 12 },
-  input: {
-    backgroundColor: theme.surface,
-    borderRadius: 10,
-    borderWidth: 1, borderColor: theme.hairlineStrong,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    color: theme.ink,
-    fontSize: 15,
-  },
-  inputMultiline: { minHeight: 88, textAlignVertical: 'top' },
   hint: { color: theme.inkFaint, fontSize: 12, lineHeight: 17, marginTop: 8 },
   result: {
     flexDirection: 'row',

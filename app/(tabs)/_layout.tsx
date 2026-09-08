@@ -5,17 +5,24 @@
 // ground, a hairline on top, 22px icons over 11pt labels, ink when active and
 // #8E9188 when not.
 //
-// Four tabs, as the handoff draws them: Accounts, Entry, Transfer, Settings.
+// Three tabs: Accounts, Entry, Settings. The handoff draws four, with
+// Transfer beside Entry, and that fourth one was built and then removed on
+// 2026-09-08.
 //
-// This was two tabs until 2026-09-08, and the objection to widening it was
-// specific: Spend as a tab kept its route params, and Income was the same
-// screen at `?direction=inflow`, so tapping "Spend" later could land in Income
-// mode with nothing on screen saying so -- money written the wrong way round
-// from a navigation detail.
+// The reason is that a transfer is not a different KIND of thing. It is an
+// entry whose other side happens to be an account of your own -- same date,
+// same description, same two-column form, same double-entry underneath. The
+// separate screen forced a choice before you had typed anything ("is this an
+// expense or a transfer?") and then could not be corrected without starting
+// again, which is the same silent-mode problem the direction segment exists to
+// avoid. It also could not hold a transfer fee, because a fee is an ordinary
+// expense split and that screen only had room for two accounts.
 //
-// Board Turn 5 removes that. Direction is now in-screen state with an Out/In
-// segmented control that recolours the whole surface, so there is no param to
-// linger and no silent mode. The objection is gone and the tab is safe.
+// So Move is now the third position of the Out / In segment on Entry, and the
+// screen changes what the sections are called rather than which screen you are
+// on. Direction stays in-screen state, never a route param: a param lingers,
+// and money written the wrong way round from a navigation detail is exactly
+// the failure this arrangement is shaped to prevent.
 
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,13 +69,6 @@ export default function TabsLayout() {
         options={{
           title: 'Entry',
           tabBarIcon: ({ color }) => <Icon name="spend" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="transfer"
-        options={{
-          title: 'Transfer',
-          tabBarIcon: ({ color }) => <Icon name="transfer" size={22} color={color} />,
         }}
       />
       <Tabs.Screen

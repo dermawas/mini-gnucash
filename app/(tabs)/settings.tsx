@@ -22,6 +22,7 @@ import {
   adoptCurrentCredentials, type Instance,
 } from '../../src/services/instances';
 import { Icon } from '../../src/components/Icon';
+import { TextField } from '../../src/components/TextField';
 import { SettingRow } from '../../src/components/SettingRow';
 import { usePrivacy } from '../../src/store/privacyStore';
 import Constants from 'expo-constants';
@@ -167,12 +168,12 @@ export default function Settings() {
                   return (
                     <View key={i.id} style={styles.ledgerEditor}>
                       <Text style={styles.editorLabel}>Name for this ledger</Text>
-                      <TextInput
+                      <TextField
+                        variant="active"
                         style={styles.editorInput}
                         value={renameDraft}
                         onChangeText={setRenameDraft}
                         placeholder={i.url}
-                        placeholderTextColor={theme.inkFaint}
                         autoCapitalize="words"
                         autoCorrect={false}
                       />
@@ -452,12 +453,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: theme.hairline,
   },
   editorLabel: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
-  editorInput: {
-    backgroundColor: theme.bg, borderRadius: 8,
-    borderWidth: 1.5, borderColor: theme.ink,
-    color: theme.ink, fontSize: 15, fontFamily: fonts.sans,
-    paddingVertical: 10, paddingHorizontal: 12, marginTop: 8, minHeight: 44,
-  },
+  // Spacing only. The field itself is TextField's 'active' variant.
+  editorInput: { marginTop: 8 },
   editorActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
   editorGhost: {
     borderWidth: 1, borderColor: theme.hairlineStrong, borderRadius: 8,

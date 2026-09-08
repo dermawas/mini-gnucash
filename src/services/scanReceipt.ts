@@ -126,7 +126,7 @@ export async function scanReceipt(params: {
     return {
       kind: 'topup',
       message:
-        'Money moving into your own wallet is a transfer, not an expense. The transfer screen takes both amounts and derives the rate itself.',
+        'Money moving into your own wallet is a transfer, not an expense. Switch this entry to Move: it takes both amounts and derives the rate itself.',
     };
   }
 

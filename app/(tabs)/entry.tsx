@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Forstra Digital
 //
-// One entry: spend, income, and the shapes the old Spend screen could not
-// express. Board Turn 5 of the 2026-09-08 handoff.
+// One entry: money out, money in, and money moved between your own accounts.
+// Board Turn 5 of the 2026-09-08 handoff, plus the Transfer merge.
 //
 // ---------------------------------------------------------------------------
 // Why this replaces Spend and Income
@@ -31,6 +31,41 @@
 // deliberately no per-row direction toggle: the add-link that created a row
 // fixes what it is, so a row cannot quietly become its own opposite.
 //
+// A move needs no fourth column. Money leaves the FROM account and arrives at
+// the TO account, which is the outflow column exactly -- so `sgn` is unchanged
+// and only the labels and the pickers differ.
+//
+// ---------------------------------------------------------------------------
+// Why Transfer is a segment and not a screen
+// ---------------------------------------------------------------------------
+// It was its own tab until 2026-09-08. A transfer is not a different KIND of
+// thing, though: it is an entry whose other side happens to be an account of
+// your own. The separate screen made you commit before typing anything, could
+// not be corrected without starting over, and had no room for a transfer fee
+// -- a fee being an ordinary expense split, which the two-account form could
+// not hold. Here it is one more line under TO.
+//
+// ===========================================================================
+// THE RATE IS SHOWN, NEVER TYPED.  (inherited from the deleted transfer.tsx)
+// ===========================================================================
+// It is tempting to add a rate field. Do not.
+//
+// A cross-currency move has three numbers -- amount out, amount in, rate --
+// of which only two are independent. Every UI that asks for all three lets
+// them disagree, rounding guarantees they eventually will, and the remainder
+// becomes an Imbalance split. That is the exact problem this replaces.
+//
+// So: two inputs, and a read-only readout of what the server will derive. The
+// number displayed AFTER saving is the server's own `derived_rate`, not a
+// client-side recomputation of what was typed.
+//
+// Two currencies are also the one case that does not go through
+// `mgc_record_entry`, which is single-currency by construction. That shape --
+// one account to one account, nothing else in the entry -- routes to
+// `mgc_transfer` instead, and anything richer is refused with a reason rather
+// than having a rate invented for it.
+// ===========================================================================
+//
 // ---------------------------------------------------------------------------
 // The collapsed default
 // ---------------------------------------------------------------------------
@@ -52,9 +87,12 @@ import {
   ActivityIndicator, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import AmountInput from '../../src/components/AmountInput';
+import { TextField } from '../../src/components/TextField';
 import { AccountSheet } from '../../src/components/AccountSheet';
+import { Chip } from '../../src/components/Chip';
+import { SectionLabel } from '../../src/components/SectionLabel';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { DateField } from '../../src/components/DateField';
 import { Icon } from '../../src/components/Icon';
@@ -63,12 +101,13 @@ import {
 } from '../../src/store/accountStore';
 import { useConnection } from '../../src/store/connectionStore';
 import {
-  recordEntry, markInFlight, clearInFlight, type Account, type EntrySplit,
+  recordEntry, transfer as transferRpc,
+  markInFlight, clearInFlight, type Account, type EntrySplit,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
 import { scanReceipt, type MatchBasis } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
-import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
+import { CURRENCIES, parseCurrencyInput, formatAmount } from '../../src/utils/currency';
 import { todayIso } from '../../src/utils/receiptDate';
 import { theme, fonts } from '../../src/constants/theme';
 
@@ -91,6 +130,9 @@ const newRow = (accountGuid: string | null = null): Row =>
 // Funders may name a security so the picker can show it dimmed rather than
 // pretend the account does not exist. AccountSheet blocks it on namespace.
 const FUNDER_TYPES = [...ASSET_TYPES, 'CREDIT', 'LIABILITY', 'STOCK', 'MUTUAL'];
+/** What `mgc_transfer` will move between, and therefore all that can cross a
+ *  currency boundary from this screen. */
+const TRANSFERABLE = ASSET_TYPES;
 
 export default function Entry() {
   const byGuid = useAccounts((s) => s.byGuid);
@@ -101,7 +143,7 @@ export default function Entry() {
   const blockedReason = useConnection((s) => s.writeBlockedReason());
   const noteFailure = useConnection((s) => s.noteFailure);
 
-  const [direction, setDirection] = useState<'outflow' | 'inflow'>('outflow');
+  const [direction, setDirection] = useState<'outflow' | 'inflow' | 'transfer'>('outflow');
   const [postDate, setPostDate] = useState<string>(todayIso());
   const [description, setDescription] = useState('');
   const [items, setItems] = useState<Row[]>([newRow()]);
@@ -131,7 +173,6 @@ export default function Entry() {
   // What the receipt said it came to, kept only to warn when the lines and the
   // printed total disagree. It is not written anywhere.
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
-  const router = useRouter();
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
 
@@ -215,11 +256,31 @@ export default function Entry() {
   );
 
   const inflow = direction === 'inflow';
+  // A transfer is not a different kind of thing, it is an entry whose other
+  // side happens to be an account of your own. Same three lists, same signs as
+  // an outflow -- the destination is debited, the source credited -- so the
+  // only differences are which accounts the pickers offer and what the
+  // sections are called.
+  const transferMode = direction === 'transfer';
   // The one variable the whole sign scheme rests on. See the header.
   const sgn = inflow ? -1 : 1;
   // "Against the direction" is verdigris in an outflow (money coming back) and
   // copper in an inflow (a fee taken out of what arrived). Never ink.
   const against = inflow ? theme.coral : theme.moss;
+
+  // What the three sections are called, and what each may hold.
+  const itemsLabel = transferMode ? 'TO' : `ITEMS · ${inflow ? 'INCOME' : 'EXPENSE'}`;
+  const fundersLabel = transferMode ? 'FROM' : 'PAID BY';
+  const funderVerb = transferMode ? 'From' : inflow ? 'Received in' : 'Paid from';
+  // In transfer mode the destination may be an account of your own OR an
+  // expense -- a transfer fee is an ordinary expense split sitting beside the
+  // two asset legs, which is exactly what the book already contains.
+  // FUNDER_TYPES and not a hand-built list, so a stock account appears here
+  // DIMMED with "desktop" beside it rather than silently missing -- an account
+  // you own that is simply absent reads as a bug in the app.
+  const itemTypes = transferMode
+    ? [...FUNDER_TYPES, ...EXPENSE_TYPES]
+    : inflow ? INCOME_TYPES : EXPENSE_TYPES;
 
   const list = (s: Section) => (s === 'items' ? items : s === 'moneyBack' ? moneyBack : funders);
   const setList = (s: Section, v: Row[]) =>
@@ -266,6 +327,28 @@ export default function Entry() {
     .filter((a): a is Account => !!a);
   const commodityGuid = chosen[0]?.commodity_guid ?? null;
 
+  // The one shape `mgc_transfer` can express: ONE account to ONE account.
+  // It takes a single from and a single to, so a cross-currency move with a
+  // fee line or a second source has nowhere to put them.
+  const simpleShape = items.length === 1 && funders.length === 1 && moneyBack.length === 0;
+  const itemAcct = items[0]?.accountGuid ? byGuid(items[0].accountGuid) : undefined;
+  const funderAcct = funders[0]?.accountGuid ? byGuid(funders[0].accountGuid) : undefined;
+  // Two currencies in one move, which is the one case that does NOT go through
+  // `mgc_record_entry` -- that function is single-currency by construction and
+  // refuses the rest. Here both amounts are stated and the SERVER derives the
+  // rate from them.
+  // ...and only between asset accounts, because that is all `mgc_transfer`
+  // accepts (`sql/40_transfer.sql`: BANK, CASH or ASSET on both sides). A
+  // foreign-currency EXPENSE would otherwise light the button up and then be
+  // refused by the server, which is a worse way to learn it.
+  const crossCurrency =
+    transferMode && simpleShape && !!itemAcct && !!funderAcct &&
+    itemAcct.commodity_guid !== funderAcct.commodity_guid &&
+    TRANSFERABLE.includes(itemAcct.account_type) &&
+    TRANSFERABLE.includes(funderAcct.account_type);
+  const fromCcy = funderAcct?.commodity_mnemonic ?? null;
+  const toCcy = itemAcct?.commodity_mnemonic ?? null;
+
   // The currency the OPEN picker constrains to, which is deliberately not
   // `commodityGuid`.
   //
@@ -278,6 +361,10 @@ export default function Entry() {
   // there is no constraint at all, and changing your mind always works.
   const pickerCommodityGuid = useMemo(() => {
     if (!picker) return null;
+    // ...except in a one-to-one move, where two currencies are the point.
+    // Any richer shape is written by `mgc_record_entry`, which is
+    // single-currency, so there the constraint comes straight back.
+    if (transferMode && simpleShape) return null;
     const other = [...items, ...moneyBack, ...funders]
       .filter((r) => r.key !== picker.key)
       .map((r) => (r.accountGuid ? byGuid(r.accountGuid) : undefined))
@@ -290,13 +377,25 @@ export default function Entry() {
   // Hidden or turned into a placeholder while it was already on the screen --
   // the picker cannot prevent that, only notice it.
   const goneStale = chosen.find((a) => a.hidden === 1 || a.placeholder === 1);
+  const mixedCurrency = !!chosen.find((a) => a.commodity_guid !== commodityGuid);
+  const nonAsset = [itemAcct, funderAcct]
+    .find((a) => a && !TRANSFERABLE.includes(a.account_type));
   const scopeProblem =
     goneStale
       ? `${goneStale.name} is hidden in GnuCash now. Choose another account.`
       : chosen.find((a) => a.commodity_namespace !== 'CURRENCY')
       ? `${chosen.find((a) => a.commodity_namespace !== 'CURRENCY')!.name} is not a currency account. Stocks, bonds and crypto belong in GnuCash desktop.`
-      : chosen.find((a) => a.commodity_guid !== commodityGuid)
-        ? 'Every account in one entry has to be in the same currency. Enter this in GnuCash desktop, where you can set the rate.'
+      : crossCurrency
+        ? null
+      : mixedCurrency
+        ? (!transferMode
+            ? 'Every account in one entry has to be in the same currency. Use Move, which takes both amounts and works the rate out itself.'
+          : !simpleShape
+            ? 'Two currencies can only be moved one account to one account. Take the extra lines off and record them separately.'
+            // One-to-one, but something other than an asset is involved, and
+            // `mgc_transfer` will not touch it.
+            : `Moving between two currencies only works between asset accounts, and ${
+                nonAsset?.name ?? 'one of these'} is ${nonAsset?.account_type ?? 'not one'}. A foreign-currency expense needs a rate set by hand — GnuCash desktop.`)
         : null;
 
   // Exactly one row anywhere may be left without an amount; the server derives
@@ -304,8 +403,12 @@ export default function Entry() {
   // this device at all.
   const blankFunders = funders.filter((r) => !r.raw.trim());
   const fundersTotal = sum(funders);
-  const balanced =
-    blankFunders.length === 1
+  const balanced = crossCurrency
+    // Nothing balances across a currency boundary and nothing needs to: the
+    // two amounts are independent and the server derives the rate between
+    // them. Both simply have to be there.
+    ? amt(items[0]) > 0 && amt(funders[0]) > 0
+    : blankFunders.length === 1
       ? required > 0
       : blankFunders.length === 0 && Math.abs(fundersTotal - required) < 0.0001 && required > 0;
 
@@ -313,7 +416,9 @@ export default function Entry() {
   const backReady = moneyBack.every((r) => r.accountGuid && amt(r) > 0);
   const fundersReady =
     funders.length > 0 && funders.every((r) => r.accountGuid) &&
-    funders.every((r) => !r.raw.trim() || amt(r) > 0);
+    funders.every((r) => !r.raw.trim() || amt(r) > 0) &&
+    // Nothing is derived across a currency boundary, so "rest" is not on offer.
+    (!crossCurrency || amt(funders[0]) > 0);
   const ready =
     itemsReady && backReady && fundersReady && balanced && !scopeProblem && canWrite && !saving;
 
@@ -333,7 +438,9 @@ export default function Entry() {
       : items.some((r) => amt(r) <= 0) ? 'Enter an amount'
       : moneyBack.some((r) => !r.accountGuid) ? 'Choose the money back account'
       : moneyBack.some((r) => amt(r) <= 0) ? 'Enter the money back amount'
-      : funders.some((r) => !r.accountGuid) ? (inflow ? 'Choose where it arrived' : 'Choose who paid')
+      : funders.some((r) => !r.accountGuid)
+        ? (transferMode ? 'Choose where it came from' : inflow ? 'Choose where it arrived' : 'Choose who paid')
+      : crossCurrency && amt(funders[0]) <= 0 ? `Enter the amount in ${fromCcy}`
       : scopeProblem ? 'Cannot be saved from here'
       : !canWrite ? 'Cannot save right now'
       : !balanced ? 'Not balanced yet'
@@ -344,7 +451,17 @@ export default function Entry() {
     : saving
       ? 'Saving…'
       : missing
-        ?? (inflow ? `Record income to ${funderLabel}` : `Spend from ${funderLabel}`);
+        // All three name what happens to the MONEY, not what the app does
+        // with it. "Record income to X" was the odd one out -- it described
+        // the filing rather than the payment, beside a "Spend from X" that
+        // described the payment.
+        // In a cross-currency move the FROM section is on screen naming the
+        // account a line above, so a button repeating it only clips the figure
+        // next to it.
+        ?? (crossCurrency ? 'Move'
+            : transferMode
+              ? `Move from ${funderLabel}`
+              : inflow ? `Receive into ${funderLabel}` : `Spend from ${funderLabel}`);
 
   // Scan is an INPUT METHOD here, not a destination: it fills the rows this
   // screen already knows how to hold, and everything after that -- correcting
@@ -378,7 +495,7 @@ export default function Entry() {
     if (out.kind === 'topup') {
       Alert.alert('That looks like a topup', out.message, [
         { text: 'Not now', style: 'cancel' },
-        { text: 'Open transfer', onPress: () => router.push('/transfer') },
+        { text: 'Switch to Move', onPress: () => setDirection('transfer') },
       ]);
       return;
     }
@@ -413,6 +530,57 @@ export default function Entry() {
     if (!ready) return;
     setSaving(true);
 
+    const label = description.trim()
+      || (transferMode ? 'Transfer' : inflow ? 'Income' : 'Expense');
+
+    // Two currencies go to `mgc_transfer`, which is the only function that
+    // takes two amounts and writes the trading splits GnuCash needs. Its
+    // marker and offline handling live inside `transferRpc`, so this branch
+    // does not repeat them.
+    if (crossCurrency) {
+      const result = await transferRpc({
+        requestId: generateTransactionId(),
+        fromGuid: funders[0].accountGuid!,
+        fromAmount: amt(funders[0]),
+        toGuid: items[0].accountGuid!,
+        toAmount: amt(items[0]),
+        postDate,
+        description: description.trim() || label,
+      });
+      setSaving(false);
+
+      if (result.ok) {
+        void setLastFunder(funders[0].accountGuid!);
+        if (result.data.status === 'already_recorded') {
+          Alert.alert('Already recorded', 'This move had already been written to your book.');
+          return;
+        }
+        // The server's own rate, not the one shown while typing.
+        const d = result.data;
+        Alert.alert(
+          'Moved',
+          d.derived_rate != null
+            ? `Rate applied: 1 ${d.from_currency} = ${d.derived_rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${d.to_currency}`
+            : 'Written to your book.',
+        );
+        reset();
+        return;
+      }
+
+      noteFailure(result.kind, result.error);
+      if (result.kind === 'offline') {
+        Alert.alert(
+          'Connection lost',
+          `${result.error}
+
+This move may or may not have reached your book. The app will check and tell you next time it connects, so do not enter it again yet.`,
+        );
+        return;
+      }
+      Alert.alert('Not saved', result.error);
+      return;
+    }
+
     const splits: EntrySplit[] = [];
     for (const r of items) {
       splits.push({ account_guid: r.accountGuid!, amount: sgn * amt(r), memo: r.memo.trim() });
@@ -430,7 +598,6 @@ export default function Entry() {
     }
 
     const requestId = generateTransactionId();
-    const label = description.trim() || (inflow ? 'Income' : 'Expense');
     await markInFlight(requestId, label);
 
     const result = await recordEntry({
@@ -467,12 +634,44 @@ export default function Entry() {
     Alert.alert('Not saved', result.error);
   }
 
+  // SHOWN, NEVER TYPED. A cross-currency move has three numbers -- out, in,
+  // rate -- of which only two are independent, and every UI that asks for all
+  // three lets them disagree. This is the same arithmetic the server does, put
+  // on screen so the rate can be sanity-checked before saving; the number
+  // reported AFTER saving is the server's own `derived_rate`, never this one.
+  const rate =
+    crossCurrency && amt(funders[0]) > 0 && amt(items[0]) > 0
+      ? amt(items[0]) / amt(funders[0])
+      : null;
+  // A rate is still a number in a currency and has to group like one. Left to
+  // the device locale it printed "16,400 IDR" directly under an amount reading
+  // "4.100.000" -- same screen, same currency, two conventions.
+  // Decimals go by MAGNITUDE, not by side: 16400 wants none and 0.000061 wants
+  // several, and which side is which depends on the pair.
+  const rateText = (x: number, ccy: string | null) =>
+    x.toLocaleString(CURRENCIES[ccy ?? '']?.locale ?? 'en-US', {
+      maximumFractionDigits: x >= 1 ? 4 : 8,
+    });
+
+  // Whether to print the currency beside each amount. Always while moving
+  // money, where two accounts of yours may well be in different currencies and
+  // the codes are the only thing that says which is which -- and otherwise
+  // only when the entry actually holds more than one, so an ordinary IDR
+  // receipt is not made to repeat itself four times.
+  const showCcy =
+    transferMode || new Set(chosen.map((a) => a.commodity_guid)).size > 1;
+
   const showSubtotal = moneyBack.length > 0 || funders.length > 1;
 
   function rowsFor(section: Section, colour?: string) {
     return list(section).map((r) => {
       const a = r.accountGuid ? byGuid(r.accountGuid) : undefined;
-      const removable = section === 'items' ? list(section).length > 1 : true;
+    // A money-back row is the only one that may go away entirely -- its
+    // section disappears with it. Items and funders must keep at least one,
+    // or the entry has no side. This only became reachable when a
+    // cross-currency move started rendering the FROM section with a single
+    // row in it, which had a delete control and nothing behind it.
+      const removable = section === 'moneyBack' || list(section).length > 1;
       // The sentence under a scanned row is the one that catches a bad guess
       // before it reaches the book. "You chose this here before" and "the words
       // on the receipt looked like this" deserve very different amounts of
@@ -519,16 +718,27 @@ export default function Entry() {
               />
             ) : null}
           </View>
+          <View>
           <View style={styles.amountWrap}>
             {colour ? <Text style={[styles.minus, { color: colour }]}>−</Text> : null}
+            {/* Thousands separators differ by currency, so an amount is
+                formatted by ITS OWN account's currency, not the entry's. In a
+                cross-currency move the two rows genuinely disagree. */}
             <AmountInput
               value={r.raw}
               onChangeText={(raw) => patch(section, r.key, { raw })}
-              currency={currency}
+              currency={a?.commodity_mnemonic ?? currency}
               style={[styles.amount, colour ? { color: colour } : null]}
-              placeholder={section === 'funders' ? 'rest' : '0'}
+              placeholder={section === 'funders' && !crossCurrency ? 'rest' : '0'}
               placeholderTextColor={theme.inkFaint}
             />
+          </View>
+          {/* Under the number and right-aligned with it, not beside it: the
+              field is right-aligned inside a fixed width, so a code placed to
+              its left ends up stranded a whole column away from the digits. */}
+          {showCcy && a ? (
+            <Text style={styles.rowCcy}>{a.commodity_mnemonic}</Text>
+          ) : null}
           </View>
           {removable ? (
             <Pressable
@@ -563,10 +773,10 @@ export default function Entry() {
               The largest text here now states the direction and changes colour
               with it, and the control beside it is bigger. */}
           <Text style={[styles.h1, inflow && { color: theme.moss }]}>
-            {inflow ? 'Money in' : 'Money out'}
+            {transferMode ? 'Move money' : inflow ? 'Money in' : 'Money out'}
           </Text>
           <View style={styles.segmented}>
-            {(['outflow', 'inflow'] as const).map((d) => {
+            {(['outflow', 'inflow', 'transfer'] as const).map((d) => {
               const on = direction === d;
               return (
                 <Pressable
@@ -575,10 +785,11 @@ export default function Entry() {
                   style={[
                     styles.seg,
                     on && { backgroundColor: d === 'inflow' ? theme.moss : theme.ink },
+                    on && d === 'transfer' && { backgroundColor: theme.ink },
                   ]}
                 >
                   <Text style={[styles.segText, on && styles.segTextOn]}>
-                    {d === 'outflow' ? 'Out' : 'In'}
+                    {d === 'outflow' ? 'Out' : d === 'inflow' ? 'In' : 'Move'}
                   </Text>
                 </Pressable>
               );
@@ -588,21 +799,17 @@ export default function Entry() {
 
         <View style={styles.chips}>
           <DateField value={postDate} onChange={setPostDate} variant="chip" />
-          <Pressable
-            style={styles.chip}
+          <Chip
+            label={`${funderVerb} ${funderLabel} ▾`}
             onPress={() => setPicker({ section: 'funders', key: funders[0].key })}
-          >
-            <Text style={styles.chipText} numberOfLines={1}>
-              {inflow ? 'Received in' : 'Paid from'} {funderLabel} ▾
-            </Text>
-          </Pressable>
+          />
         </View>
 
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionLabel}>ITEMS · {inflow ? 'INCOME' : 'EXPENSE'}</Text>
+          <SectionLabel>{itemsLabel}</SectionLabel>
           <Pressable
-            style={[styles.scanPill, (inflow || scanning) && styles.scanPillOff]}
-            disabled={inflow || scanning}
+            style={[styles.scanPill, (inflow || transferMode || scanning) && styles.scanPillOff]}
+            disabled={inflow || transferMode || scanning}
             onPress={() => Alert.alert('Scan a receipt', undefined, [
               { text: 'Photograph', onPress: () => void runScan('camera') },
               { text: 'Choose photo', onPress: () => void runScan('library') },
@@ -611,8 +818,8 @@ export default function Entry() {
           >
             {scanning
               ? <ActivityIndicator size="small" color={theme.ink} />
-              : <Icon name="scan" size={13} color={inflow ? theme.disabled : theme.ink} />}
-            <Text style={[styles.scanText, (inflow || scanning) && { color: theme.disabled }]}>
+              : <Icon name="scan" size={13} color={inflow || transferMode ? theme.disabled : theme.ink} />}
+            <Text style={[styles.scanText, (inflow || transferMode || scanning) && { color: theme.disabled }]}>
               {scanning ? 'Reading…' : 'Scan'}
             </Text>
           </Pressable>
@@ -621,33 +828,68 @@ export default function Entry() {
 
         <View style={styles.links}>
           <Pressable onPress={() => setItems([...items, newRow()])}>
-            <Text style={styles.link}>+ Add item</Text>
+            <Text style={styles.link}>{transferMode ? '+ Add line' : '+ Add item'}</Text>
           </Pressable>
-          <Pressable onPress={() => setMoneyBack([...moneyBack, newRow()])}>
-            <Text style={[styles.link, { color: against }]}>↩ Money back</Text>
-          </Pressable>
+          {/* Money back has no meaning while moving your own money between
+              your own accounts, and offering it invites a shape that cannot
+              be saved. A refunded fee is a separate entry. */}
+          {transferMode ? null : (
+            <Pressable onPress={() => setMoneyBack([...moneyBack, newRow()])}>
+              <Text style={[styles.link, { color: against }]}>↩ Money back</Text>
+            </Pressable>
+          )}
           <Pressable onPress={() => setFunders([...funders, newRow()])}>
-            <Text style={styles.link}>Split payment</Text>
+            <Text style={styles.link}>
+              {transferMode ? '+ Another source' : 'Split payment'}
+            </Text>
           </Pressable>
         </View>
 
         {moneyBack.length > 0 ? (
           <>
-            <Text style={[styles.sectionLabel, styles.sectionSolo, { color: against }]}>
+            <SectionLabel style={[styles.sectionSolo, { color: against }]}>
               ↩ MONEY BACK
-            </Text>
+            </SectionLabel>
             {rowsFor('moneyBack', against)}
           </>
         ) : null}
 
-        {funders.length > 1 ? (
+        {/* Normally one funder needs no section of its own -- the chip at the
+            top names it. A cross-currency move is the exception: the amount
+            LEAVING is a second independent number, and there is nowhere else
+            on the screen to type it. */}
+        {funders.length > 1 || crossCurrency ? (
           <>
-            <Text style={[styles.sectionLabel, styles.sectionSolo]}>PAID BY</Text>
+            <SectionLabel style={styles.sectionSolo}>{fundersLabel}</SectionLabel>
             {rowsFor('funders')}
             <Text style={styles.hint}>
-              Leave the last one empty and it takes whatever is left.
+              {crossCurrency
+                ? `Both amounts are stated: ${fromCcy} leaving, ${toCcy} arriving. The rate follows from them.`
+                : 'Leave the last one empty and it takes whatever is left.'}
             </Text>
           </>
+        ) : null}
+
+        {/* Read-only, and it must stay that way. See the note by `rate`. */}
+        {crossCurrency ? (
+          <View style={styles.rateBox}>
+            <Text style={styles.rateLabel}>EXCHANGE RATE</Text>
+            {rate ? (
+              <>
+                <Text style={styles.rateMain}>
+                  1 {fromCcy} = {rateText(rate, toCcy)} {toCcy}
+                </Text>
+                <Text style={styles.rateInverse}>
+                  1 {toCcy} = {rateText(1 / rate, fromCcy)} {fromCcy}
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.ratePending}>Enter both amounts to see the rate.</Text>
+            )}
+            <Text style={styles.rateHint}>
+              Worked out from the two amounts, so the entry cannot come out unbalanced.
+            </Text>
+          </View>
         ) : null}
 
         {/* The whole entry's description, and it has to be unmistakably that.
@@ -655,11 +897,10 @@ export default function Entry() {
             item above -- which is exactly what a per-line memo IS, one row
             higher. Moved to the end, after the sections, and given a label of
             its own so the two kinds of text cannot be confused. */}
-        <Text style={[styles.sectionLabel, styles.sectionSolo]}>DESCRIPTION</Text>
-        <TextInput
+        <SectionLabel style={styles.sectionSolo}>DESCRIPTION</SectionLabel>
+        <TextField
           style={styles.desc}
           placeholder="What the whole entry was, e.g. Lunch"
-          placeholderTextColor={theme.inkFaint}
           value={description}
           onChangeText={setDescription}
         />
@@ -687,14 +928,18 @@ export default function Entry() {
       <View style={[styles.footer, keyboard > 0 ? { marginBottom: keyboard } : null]}>
         <View style={styles.footerTotal}>
           <Text style={styles.footerSub} numberOfLines={1}>
-            {moneyBack.length > 0
+            {crossCurrency
+              ? `Arriving ${formatAmount(amt(items[0]), toCcy ?? 'IDR')}`
+              : moneyBack.length > 0
               ? `${formatAmount(itemsTotal, currency)} − ${formatAmount(backTotal, currency)} back`
               : funders.length > 1
                 ? (balanced ? 'Balanced' : 'Not balanced yet')
-                : inflow ? 'Total in' : 'Total out'}
+                : transferMode ? 'Moving' : inflow ? 'Total in' : 'Total out'}
           </Text>
           <Text style={[styles.footerAmount, inflow && { color: theme.moss }]} numberOfLines={1}>
-            {formatAmount(required, currency)}
+            {crossCurrency
+              ? formatAmount(amt(funders[0]), fromCcy ?? 'IDR')
+              : formatAmount(required, currency)}
           </Text>
         </View>
         <Pressable
@@ -714,14 +959,14 @@ export default function Entry() {
         visible={picker !== null}
         title={
           picker?.section === 'items'
-            ? (inflow ? 'Income account' : 'Expense account')
+            ? (transferMode ? 'Move it to' : inflow ? 'Income account' : 'Expense account')
             : picker?.section === 'moneyBack'
               ? 'Money back to'
-              : inflow ? 'Received in' : 'Paid from'
+              : funderVerb
         }
         types={
           picker?.section === 'items'
-            ? (inflow ? INCOME_TYPES : EXPENSE_TYPES)
+            ? itemTypes
             : picker?.section === 'moneyBack'
               ? [...INCOME_TYPES, ...EXPENSE_TYPES]
               : FUNDER_TYPES
@@ -774,18 +1019,8 @@ const styles = StyleSheet.create({
   segText: { color: theme.inkSoft, fontSize: 13, fontFamily: fonts.sansSemi },
   segTextOn: { color: theme.bg },
   chips: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  chip: {
-    backgroundColor: theme.surface, borderRadius: 8,
-    borderWidth: 1, borderColor: theme.hairlineStrong,
-    paddingVertical: 9, paddingHorizontal: 12, flexShrink: 1,
-  },
-  chipText: { color: theme.ink, fontSize: 13, fontFamily: fonts.sans },
-  desc: {
-    backgroundColor: theme.surface, borderRadius: 10,
-    borderWidth: 1, borderColor: theme.hairlineStrong,
-    color: theme.ink, fontSize: 14, fontFamily: fonts.sans,
-    paddingVertical: 10, paddingHorizontal: 12, marginTop: 12, minHeight: 44,
-  },
+  // Spacing only. The field itself is TextField's 'form' variant.
+  desc: { marginTop: 12 },
   sectionHead: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 18, paddingBottom: 6,
@@ -794,9 +1029,6 @@ const styles = StyleSheet.create({
   sectionSolo: {
     marginTop: 18, paddingBottom: 6,
     borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong,
-  },
-  sectionLabel: {
-    color: theme.inkFaint, fontSize: 10, letterSpacing: 1, fontFamily: fonts.sansMedium,
   },
   scanPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -832,6 +1064,10 @@ const styles = StyleSheet.create({
   },
   amountWrap: { flexDirection: 'row', alignItems: 'center' },
   minus: { fontSize: 13, fontFamily: fonts.mono, marginRight: 1 },
+  rowCcy: {
+    color: theme.inkFaint, fontSize: 10, fontFamily: fonts.mono,
+    textAlign: 'right', marginTop: -2,
+  },
   amount: {
     color: theme.ink, fontSize: 13, fontFamily: fonts.mono,
     textAlign: 'right', minWidth: 96, paddingVertical: 4,
@@ -852,6 +1088,24 @@ const styles = StyleSheet.create({
   },
   link: { color: theme.ink, fontSize: 11, fontFamily: fonts.sansMedium },
   hint: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 8, fontFamily: fonts.sans },
+  rateBox: {
+    backgroundColor: theme.surfaceSoft, borderRadius: 12, padding: 16, marginTop: 20,
+  },
+  rateLabel: {
+    color: theme.inkFaint, fontSize: 11, letterSpacing: 1, marginBottom: 8,
+    fontFamily: fonts.sans,
+  },
+  rateMain: {
+    color: theme.ink, fontSize: 17, fontFamily: fonts.mono, fontVariant: ['tabular-nums'],
+  },
+  rateInverse: {
+    color: theme.inkSoft, fontSize: 13, marginTop: 4, fontFamily: fonts.mono,
+    fontVariant: ['tabular-nums'],
+  },
+  ratePending: { color: theme.inkFaint, fontSize: 14, fontFamily: fonts.sans },
+  rateHint: {
+    color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 10, fontFamily: fonts.sans,
+  },
   subtotal: {
     marginTop: 18, paddingTop: 10,
     borderTopWidth: 1, borderTopColor: theme.hairlineStrong,
@@ -877,7 +1131,7 @@ const styles = StyleSheet.create({
     // Capped so a long label ("Record income to Ala Dompet") cannot squeeze
     // the total next to it down to "Rp 500...". The figure being about to be
     // written matters more than the whole button text fitting.
-    flexShrink: 1, maxWidth: '58%',
+    flexShrink: 1, maxWidth: '52%',
   },
   commitOff: { opacity: 0.35 },
   commitText: { color: theme.bg, fontSize: 13, fontFamily: fonts.sansMedium },

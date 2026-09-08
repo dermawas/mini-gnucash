@@ -37,6 +37,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { SectionLabel } from '../../src/components/SectionLabel';
 import { Icon } from '../../src/components/Icon';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts } from '../../src/store/accountStore';
@@ -235,7 +236,7 @@ export default function Accounts() {
           ListHeaderComponent={
             rows.length ? (
               <View style={styles.sectionHead}>
-                <Text style={styles.sectionLabel}>{current ? 'INSIDE' : 'ACCOUNTS'}</Text>
+                <SectionLabel>{current ? 'INSIDE' : 'ACCOUNTS'}</SectionLabel>
                 <Text style={styles.sectionCount}>{rows.length}</Text>
               </View>
             ) : null
@@ -350,9 +351,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
     paddingTop: 14, paddingBottom: 6,
     borderBottomWidth: 1, borderBottomColor: theme.hairlineStrong,
-  },
-  sectionLabel: {
-    color: theme.inkFaint, fontSize: 11, letterSpacing: 1.1, fontFamily: fonts.sansMedium,
   },
   sectionCount: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.mono },
   // A hairline list rather than the rounded cards this screen used to draw.

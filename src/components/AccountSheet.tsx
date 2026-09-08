@@ -16,10 +16,11 @@
 //      holding its fees -- and the name alone cannot tell them apart.
 
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { OverlayModal } from './OverlayModal';
 import { useAccounts } from '../store/accountStore';
 import { theme, fonts } from '../constants/theme';
+import { TextField } from './TextField';
 import type { Account } from '../services/api';
 
 type Props = {
@@ -99,10 +100,10 @@ export function AccountSheet({
     <OverlayModal visible={visible} onDismiss={close}>
       <Text style={styles.title}>{title}</Text>
 
-      <TextInput
+      <TextField
+        variant="active"
         style={styles.search}
         placeholder="Search accounts"
-        placeholderTextColor={theme.inkFaint}
         value={query}
         onChangeText={setQuery}
         autoCapitalize="none"
@@ -160,13 +161,8 @@ export function AccountSheet({
 
 const styles = StyleSheet.create({
   title: { color: theme.ink, fontSize: 18, fontFamily: fonts.sansMedium },
-  search: {
-    backgroundColor: theme.bg, borderRadius: 8,
-    borderWidth: 1.5, borderColor: theme.ink,
-    paddingHorizontal: 12, paddingVertical: 10,
-    color: theme.ink, fontSize: 15, fontFamily: fonts.sans,
-    marginTop: 12, marginBottom: 12,
-  },
+  // Spacing only. The field itself is TextField's 'active' variant.
+  search: { marginTop: 12, marginBottom: 12 },
   list: { maxHeight: 340 },
   more: { color: theme.inkFaint, fontSize: 11, marginBottom: 8, fontFamily: fonts.sans },
   empty: {
