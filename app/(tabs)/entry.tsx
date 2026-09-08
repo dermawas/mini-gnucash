@@ -139,6 +139,25 @@ export default function Entry() {
     .map((r) => (r.accountGuid ? byGuid(r.accountGuid) : undefined))
     .filter((a): a is Account => !!a);
   const commodityGuid = chosen[0]?.commodity_guid ?? null;
+
+  // The currency the OPEN picker constrains to, which is deliberately not
+  // `commodityGuid`.
+  //
+  // A row must not constrain its own replacement. Picking Gold (an XAU asset)
+  // pinned the entry to XAU, and reopening that same picker then greyed out
+  // every IDR account as "other currency" -- including the one you were trying
+  // to correct it to. There was no way back out of a wrong first pick.
+  //
+  // So the constraint comes from the OTHER rows only. With nothing else chosen
+  // there is no constraint at all, and changing your mind always works.
+  const pickerCommodityGuid = useMemo(() => {
+    if (!picker) return null;
+    const other = [...items, ...moneyBack, ...funders]
+      .filter((r) => r.key !== picker.key)
+      .map((r) => (r.accountGuid ? byGuid(r.accountGuid) : undefined))
+      .find((a): a is Account => !!a);
+    return other?.commodity_guid ?? null;
+  }, [picker, items, moneyBack, funders, byGuid]);
   const currency = chosen[0]?.commodity_mnemonic ?? 'IDR';
   // Scope guard. The sheet already prevents these, so this is the backstop for
   // an account that changed under a cached list.
@@ -450,7 +469,7 @@ export default function Entry() {
               ? [...INCOME_TYPES, ...EXPENSE_TYPES]
               : FUNDER_TYPES
         }
-        commodityGuid={commodityGuid}
+        commodityGuid={pickerCommodityGuid}
         selectedGuid={
           picker ? list(picker.section).find((r) => r.key === picker.key)?.accountGuid ?? null : null
         }

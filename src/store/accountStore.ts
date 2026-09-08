@@ -62,7 +62,18 @@ export const useAccounts = create<Store>((set, get) => ({
       // A placeholder is a container: GnuCash will not let a transaction land on
       // one, so offering it in a picker only sets up a server-side rejection.
       // Hidden accounts are excluded for the same reason a user hid them.
-      (a) => a.placeholder === 0 && a.hidden === 0,
+      //
+      // Depth 0 excludes GnuCash's own machinery. Imbalance-* and Orphan-* sit
+      // directly under the root and exist to catch an unbalanced import;
+      // nothing should ever deliberately post to one from a phone. They are
+      // recognised structurally rather than by name -- in this book the only
+      // postable accounts at depth 0 are exactly those seven, and every real
+      // account is deeper.
+      //
+      // This is filtered for PICKERS only. The Accounts tree reads
+      // `accounts` directly, so an Imbalance account with a balance in it is
+      // still visible, which is the one time you need to see it.
+      (a) => a.placeholder === 0 && a.hidden === 0 && a.depth > 0,
     );
     return types && types.length ? all.filter((a) => types.includes(a.account_type)) : all;
   },
