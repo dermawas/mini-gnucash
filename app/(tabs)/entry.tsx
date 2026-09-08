@@ -567,19 +567,28 @@ export default function Entry() {
 
       if (result.ok) {
         void setLastFunder(funders[0].accountGuid!);
-        if (result.data.status === 'already_recorded') {
-          Alert.alert('Already recorded', 'This move had already been written to your book.');
-          return;
-        }
-        // The server's own rate, not the one shown while typing.
         const d = result.data;
-        Alert.alert(
-          'Moved',
-          d.derived_rate != null
-            ? `Rate applied: 1 ${d.from_currency} = ${d.derived_rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${d.to_currency}`
-            : 'Written to your book.',
-        );
+        const already = d.status === 'already_recorded';
+        // Both sides are stated, because in a cross-currency move neither
+        // amount can be worked out from the other on sight. The rate is the
+        // SERVER's `derived_rate`, never the figure shown while typing.
+        const summary =
+          `Moved ${formatAmount(amt(funders[0]), fromCcy ?? 'IDR')} from ${funderLabel}
+` +
+          `to ${formatAmount(amt(items[0]), toCcy ?? 'IDR')} in ${itemLabel}` +
+          (d.derived_rate != null
+            ? `
+1 ${d.from_currency} = ${d.derived_rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${d.to_currency}`
+            : '');
+        setSaved(true);
         reset();
+        setTimeout(() => setSaved(false), 1200);
+        Alert.alert(
+          already ? 'Already in your book' : 'Saved',
+          already ? `${summary}
+
+This had already been written; nothing was recorded twice.` : summary,
+        );
         return;
       }
 
@@ -629,13 +638,20 @@ This move may or may not have reached your book. The app will check and tell you
 
     if (result.ok) {
       if (funders[0]?.accountGuid) void setLastFunder(funders[0].accountGuid);
-      if (result.data.status === 'already_recorded') {
-        Alert.alert('Already recorded', 'This entry had already been written to your book.');
-        return;
-      }
+      const already = result.data.status === 'already_recorded';
+      const summary = writtenSummary();
+      // Either way it is IN THE BOOK, so either way the form clears. It used
+      // to be left full on "already recorded", which invited entering it a
+      // second time -- the opposite of what that answer means.
       setSaved(true);
       reset();
       setTimeout(() => setSaved(false), 1200);
+      Alert.alert(
+        already ? 'Already in your book' : 'Saved',
+        already ? `${summary}
+
+This had already been written; nothing was recorded twice.` : summary,
+      );
       return;
     }
 
@@ -676,6 +692,48 @@ This move may or may not have reached your book. The app will check and tell you
   // receipt is not made to repeat itself four times.
   const showCcy =
     transferMode || new Set(chosen.map((a) => a.commodity_guid)).size > 1;
+
+  const itemNames = items.map((r) => (r.accountGuid ? byGuid(r.accountGuid)?.name : null));
+  const itemLabel =
+    items.length > 1 ? `${items.length} accounts` : itemNames[0] ?? '…';
+
+  /**
+   * What the app tells you it just wrote.
+   *
+   * A write used to confirm itself by flashing "Saved ✓" on the button for
+   * 1.2 seconds and clearing the form -- which is indistinguishable from the
+   * form clearing for any other reason if you happen to look away, and this is
+   * the one screen where "did that go in?" has to have an answer. Only the
+   * cross-currency move ever said anything, because it had a rate to report.
+   *
+   * So it names the AMOUNT, the ACCOUNTS and the DIRECTION back to you: enough
+   * to catch a wrong funder or a mistyped figure while the entry is still
+   * fresh, since nothing in this app can edit or delete afterwards.
+   */
+  function writtenSummary(): string {
+    const money = formatAmount(required, currency);
+    const head =
+      transferMode ? `Moved ${money} from ${funderLabel}
+to ${itemLabel}`
+        : inflow ? `Received ${money} into ${funderLabel}
+from ${itemLabel}`
+        : `Paid ${money} from ${funderLabel}
+to ${itemLabel}`;
+    const extras: string[] = [];
+    if (moneyBack.length > 0) {
+      extras.push(`after ${formatAmount(backTotal, currency)} back`);
+    }
+    // A date you did not choose is worth repeating; today is not.
+    if (postDate !== todayIso()) {
+      extras.push(
+        new Date(`${postDate}T00:00:00`).toLocaleDateString(undefined, {
+          day: 'numeric', month: 'short', year: 'numeric',
+        }),
+      );
+    }
+    return extras.length ? `${head}
+${extras.join(' · ')}` : head;
+  }
 
   const showSubtotal = moneyBack.length > 0 || funders.length > 1;
 

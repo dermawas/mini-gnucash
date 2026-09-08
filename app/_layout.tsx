@@ -96,9 +96,19 @@ function RootLayout() {
   // Re-check on foreground. There is deliberately no background poller: the
   // only thing it would buy is a fresher badge, at the cost of waking the radio
   // on a schedule nobody asked for. Every real call updates the state anyway.
+  //
+  // A parked write is resolved here too, and not only at startup. The alert
+  // shown when a write is interrupted promises the app "will check and tell
+  // you next time it connects" -- but this only ran on a cold start, so
+  // walking back into VPN range and reopening the app from the background
+  // told you nothing, and the promise was not kept. It returns immediately
+  // when there is no marker, which is almost always.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') refresh();
+      if (s === 'active') {
+        refresh();
+        void resolveInterruptedWrite();
+      }
     });
     return () => sub.remove();
   }, [refresh]);
