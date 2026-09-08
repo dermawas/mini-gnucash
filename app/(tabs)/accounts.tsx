@@ -213,20 +213,7 @@ export default function Accounts() {
             {trail.length > 1 ? `Back to ${trail[trail.length - 2].name}` : 'All accounts'}
           </Text>
         </Pressable>
-      ) : (
-        <View style={styles.actions}>
-          <View style={styles.actionsInner}>
-            <Pressable style={styles.action} onPress={() => router.push('/entry')}>
-              <Icon name="spend" size={16} color={theme.ink} />
-              <Text style={styles.actionText} numberOfLines={1}>Entry</Text>
-            </Pressable>
-            <Pressable style={styles.action} onPress={() => router.push('/transfer')}>
-              <Icon name="transfer" size={16} color={theme.ink} />
-              <Text style={styles.actionText} numberOfLines={1}>Transfer</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
+      ) : null}
 
       {cachedAt && !showMoney ? (
         <Text style={styles.cacheNote}>
@@ -352,32 +339,6 @@ const styles = StyleSheet.create({
   upPressed: { backgroundColor: theme.pressed },
   upText: {
     color: theme.ink, fontSize: 14, fontFamily: fonts.sansMedium, marginLeft: 6, flex: 1,
-  },
-  actions: { paddingHorizontal: 16, paddingBottom: 14 },
-  actionsInner: { flexDirection: 'row', justifyContent: 'space-between' },
-  // Chips, per the handoff: card surface, 1px hairline, radius 8.
-  action: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    // Without this a flex child refuses to shrink below its content width.
-    minWidth: 0,
-    marginHorizontal: 3,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.hairlineStrong,
-  },
-  // flexShrink + numberOfLines are a guard, not decoration. At font_scale 1.3
-  // "Transfer" already fills its box to the pixel and its icon is the first
-  // thing the layout compresses; a fifth button or a longer label would clip
-  // it. Let the label shrink and stay on one line instead of pushing the row
-  // wider than the screen.
-  actionText: {
-    color: theme.ink, fontSize: 12, fontFamily: fonts.sansMedium, marginLeft: 5,
-    flexShrink: 1,
   },
   cacheNote: {
     color: theme.coral, fontSize: 12, lineHeight: 17,
