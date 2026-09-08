@@ -40,6 +40,10 @@ export type ReceiptScan = {
   date: string;
   currency: string;
   items: AllocatedItem[];
+  /**
+   * The receipt's discount, NO LONGER spread across the items. It is a line of
+   * its own now -- see the note above the allocation.
+   */
   receipt_discount: number;
   receipt_tax: number;
   computed_total: number;
@@ -144,15 +148,37 @@ export async function extractReceipt(params: {
     .filter((i) => i.price < 0)
     .reduce((sum, i) => sum - i.price, 0);
 
+  // TAX is still spread across the items, because tax genuinely raises what
+  // each line cost. A DISCOUNT is not, any more.
+  //
+  // It used to be, and the damage is on the record. `Bahagia Chinese Food`,
+  // written from the phone on 2026-09-07, had a Rp 25.000 discount spread
+  // proportionally across four lines: a 35.000 dish was recorded as 19.091, a
+  // 5.000 side as 2.727, and the discount survived only as text the user typed
+  // into the description. Figures that appear on no receipt and no menu.
+  //
+  // That was never a preference. `mgc_record_transaction` applied one direction
+  // to every split, so a negative line could not be written and spreading was
+  // the only way to make the total come out right. `mgc_record_entry` takes a
+  // split that runs against the entry, so the discount can now be what it
+  // actually is: its own line.
+  const discount =
+    lineDiscount + (rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0);
+
   const allocation = allocateAmounts(
     kept,
-    lineDiscount + (rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0),
+    0,
     rawSubtotalAlreadyMatches ? 0 : extraction.receipt_tax ?? 0,
     roundingUnit,
   );
 
+  // What the entry will actually come to once the discount is subtracted as a
+  // line of its own. This is the figure to compare against the printed total --
+  // `allocation.computedTotal` is now the PRE-discount sum, so comparing that
+  // would report a mismatch on every discounted receipt.
+  const netTotal = allocation.computedTotal - discount;
   const printedTotal = extraction.printed_total ?? 0;
-  const tolerance = Math.max(1, allocation.computedTotal * 0.02);
+  const tolerance = Math.max(1, netTotal * 0.02);
 
   return {
     ok: true,
@@ -161,11 +187,10 @@ export async function extractReceipt(params: {
     date: extraction.date,
     currency: extraction.currency,
     items: allocation.allocated,
-    receipt_discount:
-      lineDiscount + (rawSubtotalAlreadyMatches ? 0 : extraction.receipt_discount ?? 0),
+    receipt_discount: discount,
     receipt_tax: rawSubtotalAlreadyMatches ? 0 : extraction.receipt_tax ?? 0,
-    computed_total: allocation.computedTotal,
+    computed_total: netTotal,
     printed_total: printedTotal,
-    total_mismatch: Math.abs(allocation.computedTotal - printedTotal) > tolerance,
+    total_mismatch: Math.abs(netTotal - printedTotal) > tolerance,
   };
 }

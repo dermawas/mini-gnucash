@@ -46,12 +46,13 @@
 // could disagree. The same trick covers a split payment where the last funder
 // is left empty -- it absorbs the remainder.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, BackHandler,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import AmountInput from '../../src/components/AmountInput';
 import { AccountSheet } from '../../src/components/AccountSheet';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -65,13 +66,23 @@ import {
   recordEntry, markInFlight, clearInFlight, type Account, type EntrySplit,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
+import { scanReceipt, type MatchBasis } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { parseCurrencyInput, formatAmount } from '../../src/utils/currency';
 import { todayIso } from '../../src/utils/receiptDate';
 import { theme, fonts } from '../../src/constants/theme';
 
 type Section = 'items' | 'moneyBack' | 'funders';
-type Row = { key: string; accountGuid: string | null; memo: string; raw: string };
+type Row = {
+  key: string;
+  accountGuid: string | null;
+  memo: string;
+  raw: string;
+  /** True while the account is the scanner's guess, not a user's choice. */
+  proposed?: boolean;
+  /** How the scanner arrived at it, so the row can say how much to trust it. */
+  basis?: MatchBasis | null;
+};
 
 let seq = 0;
 const newRow = (accountGuid: string | null = null): Row =>
@@ -84,6 +95,7 @@ const FUNDER_TYPES = [...ASSET_TYPES, 'CREDIT', 'LIABILITY', 'STOCK', 'MUTUAL'];
 export default function Entry() {
   const byGuid = useAccounts((s) => s.byGuid);
   const loadAccounts = useAccounts((s) => s.load);
+  const postable = useAccounts((s) => s.postable);
   const canWrite = useConnection((s) => s.canWrite());
   const blockedReason = useConnection((s) => s.writeBlockedReason());
   const noteFailure = useConnection((s) => s.noteFailure);
@@ -97,6 +109,12 @@ export default function Entry() {
   const [picker, setPicker] = useState<{ section: Section; key: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const seqRef = useRef(0);
+  // What the receipt said it came to, kept only to warn when the lines and the
+  // printed total disagree. It is not written anywhere.
+  const [printedTotal, setPrintedTotal] = useState<number | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     loadAccounts();
@@ -123,6 +141,7 @@ export default function Entry() {
     setMoneyBack([]);
     setFunders([newRow(funders[0]?.accountGuid ?? null)]);
     setDescription('');
+    setPrintedTotal(null);
   }
 
   // Android back, in three layers.
@@ -265,6 +284,69 @@ export default function Entry() {
       : missing
         ?? (inflow ? `Record income to ${funderLabel}` : `Spend from ${funderLabel}`);
 
+  // Scan is an INPUT METHOD here, not a destination: it fills the rows this
+  // screen already knows how to hold, and everything after that -- correcting
+  // an account, adding a money-back row, splitting the payment across two
+  // cards -- is the ordinary screen. The standalone review screen could do
+  // none of that.
+  async function runScan(source: 'camera' | 'library') {
+    // The funding account decides the currency, which decides which expense
+    // accounts can be matched at all. It is normally already filled from last
+    // time; when it is not, matching against the wrong currency is worse than
+    // asking.
+    if (!funders[0]?.accountGuid) {
+      Alert.alert(
+        'Choose who paid first',
+        'The account paying decides the currency, and that decides which expense accounts a receipt can be matched against.',
+      );
+      return;
+    }
+
+    setScanning(true);
+    const out = await scanReceipt({
+      source,
+      currency,
+      scu: chosen[0]?.commodity_scu,
+      candidates: postable(EXPENSE_TYPES),
+    });
+    setScanning(false);
+
+    if (out.kind === 'cancelled') return;
+    if (out.kind === 'error') { Alert.alert(out.title, out.message); return; }
+    if (out.kind === 'topup') {
+      Alert.alert('That looks like a topup', out.message, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open transfer', onPress: () => router.push('/transfer') },
+      ]);
+      return;
+    }
+
+    setItems(out.lines.map((l) => ({
+      key: `r${++seqRef.current}`,
+      accountGuid: l.accountGuid,
+      // The receipt's own wording for the line. It is the memo because the row
+      // already shows the ACCOUNT; "Ayam Nanking" is what makes the line
+      // recognisable against the paper.
+      memo: l.name,
+      raw: String(l.amount),
+      proposed: l.proposed,
+      basis: l.basis,
+    })));
+
+    // The discount arrives as an amount with NO account. The model knows money
+    // came off; it cannot know whether that belongs to a discount income
+    // account or against the expense, and after 2026-09-08 that choice is a
+    // deliberate one with tax consequences. So the amount is filled and the
+    // account is left for a tap -- the commit button will say so.
+    setMoneyBack(out.discount > 0
+      ? [{ key: `r${++seqRef.current}`, accountGuid: null, memo: 'Discount', raw: String(out.discount) }]
+      : []);
+
+    if (out.date) setPostDate(out.date);
+    if (out.merchant) setDescription(out.merchant);
+    setPrintedTotal(out.printedTotal);
+  }
+
   async function commit() {
     if (!ready) return;
     setSaving(true);
@@ -332,13 +414,28 @@ export default function Entry() {
     return list(section).map((r) => {
       const a = r.accountGuid ? byGuid(r.accountGuid) : undefined;
       const removable = section === 'items' ? list(section).length > 1 : true;
+      // The sentence under a scanned row is the one that catches a bad guess
+      // before it reaches the book. "You chose this here before" and "the words
+      // on the receipt looked like this" deserve very different amounts of
+      // trust, and the second is the one that has been wrong.
+      const basisNote = !a || !r.proposed ? null
+        : r.basis === 'item' ? 'You chose this for this item here before.'
+        : r.basis === 'merchant' ? 'You have always chosen this account at this merchant.'
+        : 'Suggested from the receipt text — check it.';
+
       return (
-        <View key={r.key} style={styles.row}>
+        <View key={r.key}>
+        <View style={styles.row}>
           <Pressable style={styles.rowMain} onPress={() => setPicker({ section, key: r.key })}>
             <Text style={[styles.rowName, colour ? { color: colour } : null]} numberOfLines={1}>
               {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
             </Text>
-            {a ? (
+            {/* The receipt's own wording wins over the account path: the row
+                already names the account, and "Ayam Nanking" is what makes the
+                line recognisable against the paper in your hand. */}
+            {r.memo.trim() ? (
+              <Text style={styles.rowPath} numberOfLines={1}>{r.memo}</Text>
+            ) : a ? (
               <Text style={styles.rowPath} numberOfLines={1}>{a.full_path}</Text>
             ) : null}
           </Pressable>
@@ -363,6 +460,10 @@ export default function Entry() {
               <Text style={styles.remove}>×</Text>
             </Pressable>
           ) : null}
+        </View>
+        {basisNote ? (
+          <Text style={[styles.basis, r.basis === 'tokens' && styles.basisWeak]}>{basisNote}</Text>
+        ) : null}
         </View>
       );
     });
@@ -419,15 +520,20 @@ export default function Entry() {
         <View style={styles.sectionHead}>
           <Text style={styles.sectionLabel}>ITEMS · {inflow ? 'INCOME' : 'EXPENSE'}</Text>
           <Pressable
-            style={[styles.scanPill, inflow && styles.scanPillOff]}
-            disabled={inflow}
-            onPress={() => Alert.alert(
-              'Scan',
-              'Scanning fills the items from a receipt. It is not wired into this screen yet — use the Scan action on Accounts for now.',
-            )}
+            style={[styles.scanPill, (inflow || scanning) && styles.scanPillOff]}
+            disabled={inflow || scanning}
+            onPress={() => Alert.alert('Scan a receipt', undefined, [
+              { text: 'Photograph', onPress: () => void runScan('camera') },
+              { text: 'Choose photo', onPress: () => void runScan('library') },
+              { text: 'Cancel', style: 'cancel' },
+            ])}
           >
-            <Icon name="scan" size={13} color={inflow ? theme.disabled : theme.ink} />
-            <Text style={[styles.scanText, inflow && { color: theme.disabled }]}>Scan</Text>
+            {scanning
+              ? <ActivityIndicator size="small" color={theme.ink} />
+              : <Icon name="scan" size={13} color={inflow ? theme.disabled : theme.ink} />}
+            <Text style={[styles.scanText, (inflow || scanning) && { color: theme.disabled }]}>
+              {scanning ? 'Reading…' : 'Scan'}
+            </Text>
           </Pressable>
         </View>
         {rowsFor('items')}
@@ -473,6 +579,12 @@ export default function Entry() {
           </View>
         ) : null}
 
+        {printedTotal != null && Math.abs(required - printedTotal) > Math.max(1, printedTotal * 0.02) ? (
+          <Text style={styles.warn}>
+            These rows come to {formatAmount(required, currency)}, but the receipt says{' '}
+            {formatAmount(printedTotal, currency)}. Check the amounts before saving.
+          </Text>
+        ) : null}
         {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}
         {!canWrite && blockedReason ? <Text style={styles.warn}>{blockedReason}</Text> : null}
       </ScrollView>
@@ -613,6 +725,11 @@ const styles = StyleSheet.create({
     textAlign: 'right', minWidth: 96, paddingVertical: 4,
   },
   remove: { color: theme.inkFaint, fontSize: 17, paddingLeft: 10, lineHeight: 20 },
+  basis: {
+    color: theme.inkFaint, fontSize: 11, lineHeight: 15,
+    marginTop: -2, marginBottom: 6, fontFamily: fonts.sans,
+  },
+  basisWeak: { color: theme.coral },
   links: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 12,
