@@ -21,6 +21,7 @@ import {
   listInstances, getActiveId, activate, forgetInstance, renameInstance,
   adoptCurrentCredentials, type Instance,
 } from '../../src/services/instances';
+import { Icon } from '../../src/components/Icon';
 import { SettingRow } from '../../src/components/SettingRow';
 import { usePrivacy } from '../../src/store/privacyStore';
 import Constants from 'expo-constants';
@@ -225,21 +226,7 @@ export default function Settings() {
                       await loadAccounts();
                       setSwitching(false);
                     }}
-                    onLongPress={() => {
-                      // Long-press used to mean "forget" outright. Renaming
-                      // wants the same gesture -- there is nowhere else on a
-                      // two-line row to put it without clutter -- so the press
-                      // now opens a choice, and the destructive half keeps its
-                      // own confirmation behind it.
-                      Alert.alert(i.name, undefined, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Rename',
-                          onPress: () => { setRenameDraft(i.name); setRenaming(i.id); },
-                        },
-                        { text: 'Forget', style: 'destructive', onPress: () => confirmForget(i, active) },
-                      ]);
-                    }}
+                    onLongPress={() => confirmForget(i, active)}
                   >
                     <View style={styles.ledgerText}>
                       <Text style={[styles.ledgerName, active ? styles.ledgerNameOn : null]}>
@@ -248,6 +235,19 @@ export default function Settings() {
                       <Text style={styles.ledgerUrl} numberOfLines={1}>{i.url}</Text>
                     </View>
                     <Text style={styles.ledgerMark}>{active ? 'In use' : 'Switch'}</Text>
+                    {/* The screen's own affordance for "this can be edited".
+                        Rename was on long-press first, which is invisible --
+                        needing a sentence of prose to explain a gesture is the
+                        tell that the affordance is missing. Tapping the row
+                        still switches; only the pencil renames. */}
+                    <Pressable
+                      style={styles.ledgerPencil}
+                      onPress={() => { setRenameDraft(i.name); setRenaming(i.id); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Rename ${i.name}`}
+                    >
+                      <Icon name="edit" size={14} color={theme.disabled} />
+                    </Pressable>
                   </Pressable>
                 );
               })}
@@ -257,8 +257,8 @@ export default function Settings() {
             </Pressable>
             <Text style={styles.hint}>
               A token is signed by one server, so each ledger keeps its own. Switching reloads the
-              chart of accounts. Long-press to rename or forget one. Adding one does not disconnect
-              you from this one.
+              chart of accounts. Tap the pencil to rename one, long-press to forget it. Adding one
+              does not disconnect you from this one.
             </Text>
           </>
         ) : null}
@@ -445,6 +445,7 @@ const styles = StyleSheet.create({
   ledgerNameOn: { color: theme.ink },
   ledgerUrl: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.mono },
   ledgerMark: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansSemi },
+  ledgerPencil: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   ledgerEditor: {
     backgroundColor: theme.surface,
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14,
