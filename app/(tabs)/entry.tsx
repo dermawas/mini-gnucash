@@ -49,7 +49,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, BackHandler,
-  ActivityIndicator,
+  ActivityIndicator, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -111,6 +111,22 @@ export default function Entry() {
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
   const seqRef = useRef(0);
+  // How much of the screen the keyboard is covering.
+  //
+  // This activity is edge-to-edge, so Android does NOT resize the window when
+  // the keyboard opens -- the sticky footer was simply buried under it, which
+  // meant typing an amount hid both the running total and the commit button.
+  // Committing a figure you cannot see is not acceptable in a ledger.
+  //
+  // Deliberately NOT KeyboardAvoidingView: five configurations of it were
+  // tried and found broken on this project's predecessor (see OverlayModal's
+  // header). A measured height and a margin is boring and debuggable.
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboard(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboard(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   // What the receipt said it came to, kept only to warn when the lines and the
   // printed total disagree. It is not written anywhere.
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
@@ -136,12 +152,19 @@ export default function Entry() {
     funders.some((r) => r.raw.trim()) ||
     description.trim().length > 0;
 
+  // Everything a finished entry leaves behind. The date and the receipt's
+  // printed total are in here for a reason: a scanned receipt sets BOTH, and
+  // after saving one dated 2024 the next entry silently inherited that date,
+  // with a stale "but the receipt says..." warning still on screen. A
+  // backdated entry written by accident is exactly what the date guard exists
+  // to prevent, so the reset has to be one thing that cannot be half-applied.
   function reset() {
     setItems([newRow()]);
     setMoneyBack([]);
     setFunders([newRow(funders[0]?.accountGuid ?? null)]);
     setDescription('');
     setPrintedTotal(null);
+    setPostDate(todayIso());
   }
 
   // Android back, in three layers.
@@ -193,6 +216,26 @@ export default function Entry() {
   }
   function drop(section: Section, key: string) {
     setList(section, list(section).filter((r) => r.key !== key));
+  }
+
+  // Removing a row that has something in it asks first.
+  //
+  // The remove button sits a thumb's width from the amount field, and while
+  // driving this screen I hit it twice by accident and lost the row both
+  // times. There is no undo here and no edit afterwards, so a mis-tap that
+  // silently deletes work is the wrong trade. An untouched row still goes
+  // without ceremony -- the confirmation is about losing something, not about
+  // the tap.
+  function askDrop(section: Section, r: Row) {
+    if (!r.accountGuid && !r.raw.trim() && !r.memo.trim()) { drop(section, r.key); return; }
+    Alert.alert(
+      'Remove this row?',
+      'It has not been written to your book, so nothing is lost from the ledger.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => drop(section, r.key) },
+      ],
+    );
   }
 
   const amt = (r: Row) => parseCurrencyInput(r.raw);
@@ -389,10 +432,7 @@ export default function Entry() {
         return;
       }
       setSaved(true);
-      setItems([newRow()]);
-      setMoneyBack([]);
-      setFunders([newRow(funders[0]?.accountGuid ?? null)]);
-      setDescription('');
+      reset();
       setTimeout(() => setSaved(false), 1200);
       return;
     }
@@ -427,7 +467,14 @@ export default function Entry() {
         <View key={r.key}>
         <View style={styles.row}>
           <Pressable style={styles.rowMain} onPress={() => setPicker({ section, key: r.key })}>
-            <Text style={[styles.rowName, colour ? { color: colour } : null]} numberOfLines={1}>
+            <Text
+              style={[
+                styles.rowName,
+                colour ? { color: colour } : null,
+                !a ? styles.rowNameEmpty : null,
+              ]}
+              numberOfLines={1}
+            >
               {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
             </Text>
             {/* The receipt's own wording wins over the account path: the row
@@ -452,8 +499,8 @@ export default function Entry() {
           </View>
           {removable ? (
             <Pressable
-              hitSlop={10}
-              onPress={() => drop(section, r.key)}
+              style={styles.removeHit}
+              onPress={() => askDrop(section, r)}
               accessibilityRole="button"
               accessibilityLabel="Remove this row"
             >
@@ -509,14 +556,6 @@ export default function Entry() {
           </Pressable>
         </View>
 
-        <TextInput
-          style={styles.desc}
-          placeholder="What is this for"
-          placeholderTextColor={theme.inkFaint}
-          value={description}
-          onChangeText={setDescription}
-        />
-
         <View style={styles.sectionHead}>
           <Text style={styles.sectionLabel}>ITEMS · {inflow ? 'INCOME' : 'EXPENSE'}</Text>
           <Pressable
@@ -549,6 +588,20 @@ export default function Entry() {
             <Text style={styles.link}>Split payment</Text>
           </Pressable>
         </View>
+
+        {/* Below the items, not above them.
+            It used to sit between the chips and the first row -- a full-width
+            target directly in the path between the funder chip and the account
+            you were reaching for, and it caught stray taps repeatedly. It also
+            reads better here: you say what something was after listing what
+            was in it, and a scan fills it from the merchant anyway. */}
+        <TextInput
+          style={styles.desc}
+          placeholder="What is this for"
+          placeholderTextColor={theme.inkFaint}
+          value={description}
+          onChangeText={setDescription}
+        />
 
         {moneyBack.length > 0 ? (
           <>
@@ -589,7 +642,7 @@ export default function Entry() {
         {!canWrite && blockedReason ? <Text style={styles.warn}>{blockedReason}</Text> : null}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, keyboard > 0 ? { marginBottom: keyboard } : null]}>
         <View style={styles.footerTotal}>
           <Text style={styles.footerSub} numberOfLines={1}>
             {moneyBack.length > 0
@@ -689,7 +742,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.surface, borderRadius: 10,
     borderWidth: 1, borderColor: theme.hairlineStrong,
     color: theme.ink, fontSize: 14, fontFamily: fonts.sans,
-    paddingVertical: 10, paddingHorizontal: 12, marginTop: 10, minHeight: 42,
+    paddingVertical: 10, paddingHorizontal: 12, marginTop: 12, minHeight: 44,
   },
   sectionHead: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -712,11 +765,19 @@ const styles = StyleSheet.create({
   scanText: { color: theme.ink, fontSize: 11, fontFamily: fonts.sansMedium },
   row: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 8,
+    // minHeight, not padding: the handoff asks for a 44x44 minimum target and
+    // an 8px-padded row of 12px text does not reach it. Padding alone would
+    // also grow a two-line row past where it needs to be.
+    minHeight: 44, paddingVertical: 6,
     borderBottomWidth: 1, borderBottomColor: theme.hairline,
   },
-  rowMain: { flex: 1, marginRight: 8 },
+  rowMain: { flex: 1, marginRight: 8, justifyContent: 'center', minHeight: 44 },
   rowName: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansMedium },
+  // An unfinished row should not look like a finished one. Four rows deep,
+  // "Choose an account" in the same ink as a real account name is something
+  // you scroll past -- and the commit button only ever names the FIRST thing
+  // missing, so the others stay invisible until you fix that one.
+  rowNameEmpty: { color: theme.disabled, fontFamily: fonts.sans },
   rowPath: { color: theme.inkFaint, fontSize: 11, marginTop: 2, fontFamily: fonts.sans },
   amountWrap: { flexDirection: 'row', alignItems: 'center' },
   minus: { fontSize: 13, fontFamily: fonts.mono, marginRight: 1 },
@@ -724,7 +785,11 @@ const styles = StyleSheet.create({
     color: theme.ink, fontSize: 13, fontFamily: fonts.mono,
     textAlign: 'right', minWidth: 96, paddingVertical: 4,
   },
-  remove: { color: theme.inkFaint, fontSize: 17, paddingLeft: 10, lineHeight: 20 },
+  // 44x44, which is the handoff's stated minimum and was not being met. The
+  // old target was a 17px glyph with 10px of slop, close enough to the amount
+  // field to be hit by mistake -- which it was, twice.
+  removeHit: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  remove: { color: theme.inkFaint, fontSize: 17, lineHeight: 20 },
   basis: {
     color: theme.inkFaint, fontSize: 11, lineHeight: 15,
     marginTop: -2, marginBottom: 6, fontFamily: fonts.sans,
@@ -757,7 +822,11 @@ const styles = StyleSheet.create({
   },
   commit: {
     backgroundColor: theme.ink, borderRadius: 10,
-    paddingVertical: 11, paddingHorizontal: 16, flexShrink: 1,
+    paddingVertical: 11, paddingHorizontal: 16,
+    // Capped so a long label ("Record income to Ala Dompet") cannot squeeze
+    // the total next to it down to "Rp 500...". The figure being about to be
+    // written matters more than the whole button text fitting.
+    flexShrink: 1, maxWidth: '58%',
   },
   commitOff: { opacity: 0.35 },
   commitText: { color: theme.bg, fontSize: 13, fontFamily: fonts.sansMedium },
