@@ -63,7 +63,7 @@ export function allocateAmounts(
     // available choice: bags, packaging and loyalty lines are rung up last and
     // frequently cost nothing, so the correction would turn a zero line into a
     // charge -- or, when the remainder is negative, into a negative one, which
-    // mgc_record_transaction rejects outright ("Line % has no amount"). The
+    // `mgc_record_entry` rejects outright ("Line % has no amount"). The
     // largest line can always absorb it. First-largest wins, and the caller's
     // order is stable, so the choice is deterministic across runs.
     let target = 0;

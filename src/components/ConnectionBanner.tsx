@@ -28,8 +28,9 @@
 //     writing is refused until it lets go. Same tone, true sentence, and no
 //     action, because there is nothing this app can do about it.
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useConnection } from '../store/connectionStore';
 import { theme, fonts } from '../constants/theme';
 
@@ -38,6 +39,19 @@ export function ConnectionBanner({ onPress }: { onPress?: () => void }) {
   const lockedBy = useConnection((s) => s.lockedBy);
   const lastError = useConnection((s) => s.lastError);
   const refresh = useConnection((s) => s.refresh);
+  const refreshIfStale = useConnection((s) => s.refreshIfStale);
+
+  // Re-check whenever the screen holding this banner comes into view.
+  //
+  // It lives HERE rather than in each screen so it is applied by construction:
+  // a screen cannot show the banner and forget to keep it current, and the two
+  // cannot drift apart. Before this, only Accounts noticed a dropped
+  // connection, because it was the only screen that made a call on arrival --
+  // so Entry would offer to save into a ledger that was no longer reachable.
+  //
+  // MUST stay above the early return below. A hook after a conditional return
+  // is a hook that sometimes does not run, which React does not allow.
+  useFocusEffect(useCallback(() => { void refreshIfStale(); }, [refreshIfStale]));
 
   if (state === 'online' || state === 'unknown') return null;
 

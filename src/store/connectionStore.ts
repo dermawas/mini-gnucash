@@ -53,6 +53,8 @@ type Store = {
   writeBlockedReason: () => string | null;
 
   refresh: (creds?: Credentials | null) => Promise<void>;
+  /** Re-check, but not more often than `maxAgeMs`. See the note on the action. */
+  refreshIfStale: (maxAgeMs?: number) => Promise<void>;
   /** Fold a failed call's outcome into connection state without a round trip. */
   noteFailure: (kind: 'offline' | 'unauthorized' | 'locked' | 'rejected', error: string) => void;
   reset: () => void;
@@ -85,6 +87,26 @@ export const useConnection = create<Store>((set, get) => ({
       default:
         return 'Checking the connection...';
     }
+  },
+
+  /**
+   * What every screen calls when it comes into view.
+   *
+   * Connection state used to change only when something made a real call, and
+   * the only screen that makes one on arrival is Accounts. So pulling the VPN
+   * down and walking to Entry left it insisting it was online -- the banner
+   * was honest about what it last knew, and what it last knew was stale.
+   *
+   * Rate-limited rather than unconditional, because this fires on every
+   * navigation: bouncing between two tabs should not ping the server twice a
+   * second, and when the answer is "offline" each of those pings costs a
+   * timeout.
+   */
+  refreshIfStale: async (maxAgeMs = 20000) => {
+    const s = get();
+    if (s.checking) return;
+    if (s.lastCheckedAt && Date.now() - Date.parse(s.lastCheckedAt) < maxAgeMs) return;
+    await get().refresh();
   },
 
   refresh: async (creds) => {

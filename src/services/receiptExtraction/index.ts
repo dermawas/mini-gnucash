@@ -131,7 +131,7 @@ export async function extractReceipt(params: {
   // wrong often enough that this cannot be left to it: a Diamond supermarket
   // receipt of 94 lines came back with eight of them.
   //
-  // They cannot be written as splits -- mgc_record_transaction rejects
+  // They cannot be written as splits -- `mgc_record_entry` rejects
   // amount <= 0 -- and dropping them silently is worse than refusing, because
   // the funding split is derived from the lines, so the ledger would balance
   // perfectly at a total nobody agreed to. Fold them into the receipt-level
@@ -157,7 +157,7 @@ export async function extractReceipt(params: {
   // 5.000 side as 2.727, and the discount survived only as text the user typed
   // into the description. Figures that appear on no receipt and no menu.
   //
-  // That was never a preference. `mgc_record_transaction` applied one direction
+  // That was never a preference. The RETIRED `mgc_record_transaction` applied one direction
   // to every split, so a negative line could not be written and spreading was
   // the only way to make the total come out right. `mgc_record_entry` takes a
   // split that runs against the entry, so the discount can now be what it

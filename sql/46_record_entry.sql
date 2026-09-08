@@ -6,9 +6,9 @@
 --   sudo -u postgres psql -d <your_gnucash_db> -f sql/46_record_entry.sql
 --
 -- ---------------------------------------------------------------------------
--- Why this exists alongside mgc_record_transaction
+-- Why this replaced mgc_record_transaction (dropped 2026-09-08)
 -- ---------------------------------------------------------------------------
--- `mgc_record_transaction` takes ONE funding account, ONE direction, and a
+-- `mgc_record_transaction` took ONE funding account, ONE direction, and a
 -- list of category lines that must all be the same account type. Reading the
 -- production book on 2026-09-08 showed how much that shape cannot express:
 --
@@ -27,7 +27,7 @@
 -- ---------------------------------------------------------------------------
 -- Signed amounts, and why the old positive-only rule is not kept
 -- ---------------------------------------------------------------------------
--- `mgc_record_transaction` deliberately takes positive amounts and derives
+-- `mgc_record_transaction` deliberately took positive amounts and derived
 -- every sign from `p_direction`, so the client never does sign arithmetic.
 -- That is the right call when there IS one direction. Here there is not: an
 -- entry can hold a funding split, several expense lines and a discount that
@@ -221,7 +221,7 @@ BEGIN
 
   -- ---------------------------------------------------------------------
   -- Resolve the balance. Either one split absorbs it -- proven by
-  -- construction, exactly as mgc_record_transaction derives its funding
+  -- construction, exactly as mgc_record_transaction derived its funding
   -- split -- or every amount was given and the total must already be zero.
   -- ---------------------------------------------------------------------
   IF v_balancer IS NOT NULL THEN

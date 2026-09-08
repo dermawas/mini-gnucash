@@ -101,7 +101,7 @@ import {
 } from '../../src/store/accountStore';
 import { useConnection } from '../../src/store/connectionStore';
 import {
-  recordEntry, transfer as transferRpc,
+  recordEntry, transfer as transferRpc, getRegister, type RegisterRow,
   markInFlight, clearInFlight, type Account, type EntrySplit,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
@@ -151,6 +151,8 @@ export default function Entry() {
   const [funders, setFunders] = useState<Row[]>([newRow()]);
   const [picker, setPicker] = useState<{ section: Section; key: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  /** Looking for a duplicate. Not saving yet, and must not say it is. */
+  const [checkingDup, setCheckingDup] = useState(false);
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
   const seqRef = useRef(0);
@@ -464,6 +466,8 @@ export default function Entry() {
 
   const commitText = saved
     ? 'Saved ✓'
+    : checkingDup
+      ? 'Checking…'
     : saving
       ? 'Saving…'
       : missing
@@ -542,9 +546,80 @@ export default function Entry() {
     setPrintedTotal(out.printedTotal);
   }
 
+  /**
+   * Ask a yes/no question and wait for the answer.
+   *
+   * `Alert` is callback-shaped, so without this the duplicate check would have
+   * to be written inside-out around it.
+   */
+  function ask(title: string, message: string, proceed: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      Alert.alert(
+        title, message,
+        [
+          { text: 'Go back', style: 'cancel', onPress: () => resolve(false) },
+          { text: proceed, style: 'destructive', onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+  }
+
+  /**
+   * The same money, from the same account, on the same day, already in the book.
+   *
+   * It WARNS, it does not refuse, and that distinction is the whole design.
+   * Two legitimate 30.000 entries were written from this phone within a minute
+   * of each other on 2026-09-08 -- a lunch and a matching deposit -- and both
+   * came off the same account on the same date. A rule that blocked the second
+   * would have been wrong. What the user needs is to be asked.
+   *
+   * It reads the FUNDING account, because that is where a payment made twice
+   * shows up whichever categories it was split across, and it matches the sign
+   * so an expense is never mistaken for the refund of one.
+   *
+   * A failed lookup returns null. Never block a write because the check could
+   * not run -- the check is the convenience, the write is the point.
+   */
+  async function findDuplicate(): Promise<RegisterRow | null> {
+    const guid = funders[0]?.accountGuid;
+    const amount = crossCurrency ? amt(funders[0]) : required;
+    if (!guid || !(amount > 0)) return null;
+
+    const res = await getRegister(guid, 7, 100);
+    if (!res.ok) return null;
+
+    const leaves = !inflow;
+    return res.data.rows.find((r) =>
+      r.post_date.slice(0, 10) === postDate &&
+      (r.quantity < 0) === leaves &&
+      Math.abs(Math.abs(r.quantity) - amount) < 0.005,
+    ) ?? null;
+  }
+
   async function commit() {
     if (!ready) return;
     setSaving(true);
+    setCheckingDup(true);
+    const dup = await findDuplicate();
+    setCheckingDup(false);
+    if (dup) {
+      const same = `${dup.description || 'An entry'} — ${
+        formatAmount(Math.abs(dup.quantity), crossCurrency ? (fromCcy ?? currency) : currency)
+      }`;
+      const go = await ask(
+        'Already got one like this',
+        `${funderLabel} already has this on the same date:
+
+${same}
+
+` +
+          'If that is this same purchase, go back. This app cannot edit or delete, ' +
+          'so a duplicate has to be unpicked in GnuCash desktop.',
+        'Record anyway',
+      );
+      if (!go) { setSaving(false); return; }
+    }
 
     const label = description.trim()
       || (transferMode ? 'Transfer' : inflow ? 'Income' : 'Expense');

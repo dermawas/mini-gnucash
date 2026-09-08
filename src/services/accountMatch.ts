@@ -15,7 +15,7 @@
 //      evidence about which account to offer, and nothing more.
 //
 //   2. Candidates are filtered to the funding account's commodity. An expense
-//      here is single-currency by design -- mgc_record_transaction refuses a
+//      here is single-currency by design -- `mgc_record_entry` refuses a
 //      cross-currency one rather than inventing a rate -- so offering an
 //      account that would be rejected server-side is offering a dead end.
 //
