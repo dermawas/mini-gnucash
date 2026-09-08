@@ -32,6 +32,8 @@ type Props = {
    * shown dimmed rather than hidden -- see the note above.
    */
   commodityGuid?: string | null;
+  /** Accounts already used on the other side of the entry, e.g. a transfer. */
+  excludeGuids?: string[];
   selectedGuid?: string | null;
   onSelect: (a: Account) => void;
   onDismiss: () => void;
@@ -49,7 +51,7 @@ function blockedReason(a: Account, commodityGuid?: string | null): string | null
 }
 
 export function AccountSheet({
-  visible, title, types, commodityGuid, selectedGuid, onSelect, onDismiss,
+  visible, title, types, commodityGuid, excludeGuids, selectedGuid, onSelect, onDismiss,
 }: Props) {
   const [query, setQuery] = useState('');
   const postable = useAccounts((s) => s.postable);
@@ -64,7 +66,11 @@ export function AccountSheet({
   useEffect(() => { if (visible) setQuery(''); }, [visible, title]);
 
   const { rows, total } = useMemo(() => {
-    const list = postable(types);
+    let list = postable(types);
+    // The other side of a transfer. Excluded rather than dimmed: this is not
+    // an account that cannot be used, it is one already spoken for, and the
+    // server refuses a transfer to and from the same account anyway.
+    if (excludeGuids?.length) list = list.filter((a) => !excludeGuids.includes(a.guid));
     const q = query.trim().toLowerCase();
     // Substring over the FULL PATH, not the leaf, so "coffee" finds
     // Expenses:Food:Coffee and "food" finds everything beneath Food.
@@ -82,7 +88,7 @@ export function AccountSheet({
     // problem. Forty is instant, and the search field above is the real way
     // through a list this size.
     return { rows: scored.slice(0, 40), total: scored.length };
-  }, [postable, types, commodityGuid, query]);
+  }, [postable, types, commodityGuid, excludeGuids, query]);
 
   function close() {
     setQuery('');

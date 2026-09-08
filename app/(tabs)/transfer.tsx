@@ -25,7 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import AmountInput from '../../src/components/AmountInput';
-import { AccountPicker } from '../../src/components/AccountPicker';
+import { AccountSheet } from '../../src/components/AccountSheet';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
 import { useAccounts, ASSET_TYPES } from '../../src/store/accountStore';
 import { useConnection } from '../../src/store/connectionStore';
@@ -274,7 +274,7 @@ export default function Transfer() {
         </Pressable>
       </ScrollView>
 
-      <AccountPicker
+      <AccountSheet
         visible={picker !== null}
         title={picker === 'from' ? 'Transfer from' : 'Transfer to'}
         types={ASSET_TYPES}
