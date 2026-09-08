@@ -169,17 +169,32 @@ export default function Entry() {
 
   const funderNames = funders.map((r) => (r.accountGuid ? byGuid(r.accountGuid)?.name : null));
   const funderLabel =
-    funders.length > 1
-      ? `${funders.length} accounts`
-      : funderNames[0] ?? 'choose';
+    funders.length > 1 ? `${funders.length} accounts` : funderNames[0] ?? '…';
+
+  // What the commit button says while it is disabled.
+  //
+  // A dead button with no reason is not this project's style -- `TODO.md` says
+  // so about the receipt screen, where Save greyed out with nothing on screen
+  // explaining it. So the button names the one thing still missing instead of
+  // repeating an action it will not perform. Order matters: it reports what
+  // you would fix FIRST, top of the screen down.
+  const missing: string | null =
+    items.some((r) => !r.accountGuid) ? 'Choose an account'
+      : items.some((r) => amt(r) <= 0) ? 'Enter an amount'
+      : moneyBack.some((r) => !r.accountGuid) ? 'Choose the money back account'
+      : moneyBack.some((r) => amt(r) <= 0) ? 'Enter the money back amount'
+      : funders.some((r) => !r.accountGuid) ? (inflow ? 'Choose where it arrived' : 'Choose who paid')
+      : scopeProblem ? 'Cannot be saved from here'
+      : !canWrite ? 'Cannot save right now'
+      : !balanced ? 'Not balanced yet'
+      : null;
 
   const commitText = saved
     ? 'Saved ✓'
     : saving
       ? 'Saving…'
-      : inflow
-        ? `Record income to ${funderLabel}`
-        : `Spend from ${funderLabel}`;
+      : missing
+        ?? (inflow ? `Record income to ${funderLabel}` : `Spend from ${funderLabel}`);
 
   async function commit() {
     if (!ready) return;
