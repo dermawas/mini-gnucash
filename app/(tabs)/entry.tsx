@@ -96,6 +96,7 @@ export default function Entry() {
   const byGuid = useAccounts((s) => s.byGuid);
   const loadAccounts = useAccounts((s) => s.load);
   const postable = useAccounts((s) => s.postable);
+  const accountCount = useAccounts((s) => s.accounts.length);
   const canWrite = useConnection((s) => s.canWrite());
   const blockedReason = useConnection((s) => s.writeBlockedReason());
   const noteFailure = useConnection((s) => s.noteFailure);
@@ -132,13 +133,26 @@ export default function Entry() {
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
   const router = useRouter();
 
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+
+  // Restore the remembered funder only once the accounts are actually loaded,
+  // and only if it is still one the picker would offer.
+  //
+  // It is stored as a bare guid and was being resolved with byGuid(), which
+  // reads EVERY account rather than the postable ones. So an account hidden in
+  // GnuCash desktop vanished from the picker but stayed pre-filled in the
+  // chip -- and would have been written to, by an entry whose funder the
+  // picker refused to offer. Hiding an account has to mean hidden everywhere.
+  const restored = useRef(false);
   useEffect(() => {
-    loadAccounts();
+    if (restored.current || accountCount === 0) return;
+    restored.current = true;
     getLastFunder().then((guid) => {
-      if (guid) setFunders((f) => (f[0]?.accountGuid ? f : [{ ...f[0], accountGuid: guid }]));
+      if (!guid) return;
+      if (!postable(FUNDER_TYPES).some((a) => a.guid === guid)) return;
+      setFunders((f) => (f[0]?.accountGuid ? f : [{ ...f[0], accountGuid: guid }]));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accountCount, postable]);
 
   useFocusEffect(useCallback(() => { loadAccounts(); }, [loadAccounts]));
 
@@ -273,8 +287,13 @@ export default function Entry() {
   const currency = chosen[0]?.commodity_mnemonic ?? 'IDR';
   // Scope guard. The sheet already prevents these, so this is the backstop for
   // an account that changed under a cached list.
+  // Hidden or turned into a placeholder while it was already on the screen --
+  // the picker cannot prevent that, only notice it.
+  const goneStale = chosen.find((a) => a.hidden === 1 || a.placeholder === 1);
   const scopeProblem =
-    chosen.find((a) => a.commodity_namespace !== 'CURRENCY')
+    goneStale
+      ? `${goneStale.name} is hidden in GnuCash now. Choose another account.`
+      : chosen.find((a) => a.commodity_namespace !== 'CURRENCY')
       ? `${chosen.find((a) => a.commodity_namespace !== 'CURRENCY')!.name} is not a currency account. Stocks, bonds and crypto belong in GnuCash desktop.`
       : chosen.find((a) => a.commodity_guid !== commodityGuid)
         ? 'Every account in one entry has to be in the same currency. Enter this in GnuCash desktop, where you can set the rate.'
