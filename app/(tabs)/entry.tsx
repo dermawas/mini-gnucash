@@ -555,7 +555,16 @@ export default function Entry() {
         <ConnectionBanner />
 
         <View style={styles.header}>
-          <Text style={styles.h1}>Entry</Text>
+          {/* The title says which way the money is going, rather than
+              repeating the tab's own name back at you.
+              The handoff asked for a "compact" Out/In segmented and that was
+              wrong: it is the most consequential control on the screen and was
+              the smallest thing on it, easy to start an entry without noticing.
+              The largest text here now states the direction and changes colour
+              with it, and the control beside it is bigger. */}
+          <Text style={[styles.h1, inflow && { color: theme.moss }]}>
+            {inflow ? 'Money in' : 'Money out'}
+          </Text>
           <View style={styles.segmented}>
             {(['outflow', 'inflow'] as const).map((d) => {
               const on = direction === d;
@@ -757,12 +766,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 12,
   },
-  h1: { color: theme.ink, fontSize: 18, fontFamily: fonts.sansMedium },
+  h1: { color: theme.ink, fontSize: 19, fontFamily: fonts.sansSemi },
   segmented: {
     flexDirection: 'row', backgroundColor: theme.surfaceSoft, borderRadius: 8, padding: 2,
   },
-  seg: { paddingVertical: 5, paddingHorizontal: 14, borderRadius: 6 },
-  segText: { color: theme.inkSoft, fontSize: 12, fontFamily: fonts.sansMedium },
+  seg: { paddingVertical: 7, paddingHorizontal: 18, borderRadius: 6 },
+  segText: { color: theme.inkSoft, fontSize: 13, fontFamily: fonts.sansSemi },
   segTextOn: { color: theme.bg },
   chips: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   chip: {
