@@ -124,6 +124,26 @@ export async function activate(id: string): Promise<Instance | null> {
 }
 
 /**
+ * Rename one.
+ *
+ * The name is a label on this phone and nothing else -- it never reaches the
+ * book, and the URL and token are untouched, so renaming cannot point the app
+ * at a different ledger. That is the whole reason it is safe to offer when
+ * nothing else here can be edited.
+ *
+ * A blank name falls back to the host:port, the same default a ledger added
+ * without one gets, rather than leaving a row with no label at all.
+ */
+export async function renameInstance(id: string, name: string): Promise<Instance[]> {
+  const list = await listInstances();
+  const next = list.map((i) =>
+    i.id === id ? { ...i, name: name.trim() || labelFromUrl(i.url) } : i,
+  );
+  await AsyncStorage.setItem(LIST_KEY, JSON.stringify(next));
+  return next;
+}
+
+/**
  * Forget one. If it was active the app is left disconnected rather than
  * silently switched to another ledger -- writing to the wrong book because
  * something was deleted elsewhere is exactly the failure worth refusing.

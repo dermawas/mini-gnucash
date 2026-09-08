@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, Alert,
+  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -18,8 +18,8 @@ import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } fro
 import { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from '../../src/services/receiptExtraction';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
 import {
-  listInstances, getActiveId, activate, forgetInstance, adoptCurrentCredentials,
-  type Instance,
+  listInstances, getActiveId, activate, forgetInstance, renameInstance,
+  adoptCurrentCredentials, type Instance,
 } from '../../src/services/instances';
 import { SettingRow } from '../../src/components/SettingRow';
 import { usePrivacy } from '../../src/store/privacyStore';
@@ -51,6 +51,9 @@ export default function Settings() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  // Which ledger row is being renamed, and what is being typed into it.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   // Shared with the eye on Accounts and the register -- one store, so the
   // toggle here and the icon there can never disagree.
   const hidden = usePrivacy((s) => s.hidden);
@@ -76,6 +79,33 @@ export default function Settings() {
     getAiModel().then(setSavedModel);
     loadMemory().then((m) => setMerchants(Object.keys(m).length));
   }, []);
+
+  function confirmForget(i: Instance, active: boolean) {
+    Alert.alert(
+      `Forget ${i.name}?`,
+      active
+        ? 'This is the ledger you are connected to. Forgetting it disconnects the app; your GnuCash book is untouched.'
+        : 'Removes its address and token from this phone. Your GnuCash book is untouched.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: async () => {
+            await forgetInstance(i.id);
+            setInstances(await listInstances());
+            setActiveId(await getActiveId());
+            if (active) {
+              await clearAccountCache();
+              resetAccounts();
+              conn.reset();
+              router.replace('/connect');
+            }
+          },
+        },
+      ],
+    );
+  }
 
   async function handleDisconnect() {
     Alert.alert(
@@ -128,6 +158,45 @@ export default function Settings() {
             <View style={styles.card}>
               {instances.map((i) => {
                 const active = i.id === activeId;
+
+                // Renaming swaps the row for an editor in place, the same way
+                // the Gemini key and model rows do, so the screen has one way
+                // of editing rather than two.
+                if (renaming === i.id) {
+                  return (
+                    <View key={i.id} style={styles.ledgerEditor}>
+                      <Text style={styles.editorLabel}>Name for this ledger</Text>
+                      <TextInput
+                        style={styles.editorInput}
+                        value={renameDraft}
+                        onChangeText={setRenameDraft}
+                        placeholder={i.url}
+                        placeholderTextColor={theme.inkFaint}
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                      <Text style={styles.hint}>
+                        A label on this phone only. It never reaches your book, and the address
+                        and token are untouched. Leave it empty to go back to the address.
+                      </Text>
+                      <View style={styles.editorActions}>
+                        <Pressable style={styles.editorGhost} onPress={() => setRenaming(null)}>
+                          <Text style={styles.editorGhostText}>Cancel</Text>
+                        </Pressable>
+                        <Pressable
+                          style={styles.editorSave}
+                          onPress={async () => {
+                            setInstances(await renameInstance(i.id, renameDraft));
+                            setRenaming(null);
+                          }}
+                        >
+                          <Text style={styles.editorSaveText}>Save</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                }
+
                 return (
                   <Pressable
                     key={i.id}
@@ -157,30 +226,19 @@ export default function Settings() {
                       setSwitching(false);
                     }}
                     onLongPress={() => {
-                      Alert.alert(
-                        `Forget ${i.name}?`,
-                        active
-                          ? 'This is the ledger you are connected to. Forgetting it disconnects the app; your GnuCash book is untouched.'
-                          : 'Removes its address and token from this phone. Your GnuCash book is untouched.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Forget',
-                            style: 'destructive',
-                            onPress: async () => {
-                              await forgetInstance(i.id);
-                              setInstances(await listInstances());
-                              setActiveId(await getActiveId());
-                              if (active) {
-                                await clearAccountCache();
-                                resetAccounts();
-                                conn.reset();
-                                router.replace('/connect');
-                              }
-                            },
-                          },
-                        ],
-                      );
+                      // Long-press used to mean "forget" outright. Renaming
+                      // wants the same gesture -- there is nowhere else on a
+                      // two-line row to put it without clutter -- so the press
+                      // now opens a choice, and the destructive half keeps its
+                      // own confirmation behind it.
+                      Alert.alert(i.name, undefined, [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Rename',
+                          onPress: () => { setRenameDraft(i.name); setRenaming(i.id); },
+                        },
+                        { text: 'Forget', style: 'destructive', onPress: () => confirmForget(i, active) },
+                      ]);
                     }}
                   >
                     <View style={styles.ledgerText}>
@@ -199,8 +257,8 @@ export default function Settings() {
             </Pressable>
             <Text style={styles.hint}>
               A token is signed by one server, so each ledger keeps its own. Switching reloads the
-              chart of accounts. Long-press to forget one. Adding one does not disconnect you from
-              this one.
+              chart of accounts. Long-press to rename or forget one. Adding one does not disconnect
+              you from this one.
             </Text>
           </>
         ) : null}
@@ -387,6 +445,28 @@ const styles = StyleSheet.create({
   ledgerNameOn: { color: theme.ink },
   ledgerUrl: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.mono },
   ledgerMark: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansSemi },
+  ledgerEditor: {
+    backgroundColor: theme.surface,
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14,
+    borderBottomWidth: 1, borderBottomColor: theme.hairline,
+  },
+  editorLabel: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
+  editorInput: {
+    backgroundColor: theme.bg, borderRadius: 8,
+    borderWidth: 1.5, borderColor: theme.ink,
+    color: theme.ink, fontSize: 15, fontFamily: fonts.sans,
+    paddingVertical: 10, paddingHorizontal: 12, marginTop: 8, minHeight: 44,
+  },
+  editorActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 },
+  editorGhost: {
+    borderWidth: 1, borderColor: theme.hairlineStrong, borderRadius: 8,
+    paddingVertical: 8, paddingHorizontal: 12, marginRight: 8,
+  },
+  editorGhostText: { color: theme.inkSoft, fontSize: 13, fontFamily: fonts.sans },
+  editorSave: {
+    backgroundColor: theme.ink, borderRadius: 8, paddingVertical: 9, paddingHorizontal: 14,
+  },
+  editorSaveText: { color: theme.bg, fontSize: 13, fontFamily: fonts.sansMedium },
   switchRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 14, paddingHorizontal: 20,
