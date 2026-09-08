@@ -63,7 +63,7 @@ export function AccountSheet({
   // to forget -- backdrop, Cancel, selection, or anything added later.
   useEffect(() => { if (visible) setQuery(''); }, [visible, title]);
 
-  const rows = useMemo(() => {
+  const { rows, total } = useMemo(() => {
     const list = postable(types);
     const q = query.trim().toLowerCase();
     // Substring over the FULL PATH, not the leaf, so "coffee" finds
@@ -73,7 +73,15 @@ export function AccountSheet({
     // to be scrolled past on the way to the one you want.
     const scored = matched.map((a) => ({ a, blocked: blockedReason(a, commodityGuid) }));
     scored.sort((x, y) => (x.blocked ? 1 : 0) - (y.blocked ? 1 : 0));
-    return scored.slice(0, 200);
+    // 40, not 200.
+    //
+    // These rows are built synchronously inside a plain ScrollView, so the cap
+    // IS the open time: 200 of them against a 400-account book was a visible
+    // pause before the sheet appeared. A FlatList would virtualise it, but
+    // nesting one inside OverlayModal's ScrollView trades this for a different
+    // problem. Forty is instant, and the search field above is the real way
+    // through a list this size.
+    return { rows: scored.slice(0, 40), total: scored.length };
   }, [postable, types, commodityGuid, query]);
 
   function close() {
@@ -94,6 +102,12 @@ export function AccountSheet({
         autoCapitalize="none"
         autoCorrect={false}
       />
+
+      {total > rows.length ? (
+        <Text style={styles.more}>
+          Showing {rows.length} of {total}. Type to narrow it down.
+        </Text>
+      ) : null}
 
       <ScrollView style={styles.list} nestedScrollEnabled keyboardShouldPersistTaps="handled">
         {rows.length === 0 ? (
@@ -148,6 +162,7 @@ const styles = StyleSheet.create({
     marginTop: 12, marginBottom: 12,
   },
   list: { maxHeight: 340 },
+  more: { color: theme.inkFaint, fontSize: 11, marginBottom: 8, fontFamily: fonts.sans },
   empty: {
     color: theme.inkFaint, fontSize: 14, lineHeight: 20, paddingVertical: 24,
     fontFamily: fonts.sans,

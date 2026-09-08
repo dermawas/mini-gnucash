@@ -23,7 +23,7 @@
 //     A nested horizontal GestureScrollView rendered completely empty on some
 //     devices and the root cause was never isolated.
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { theme } from '../constants/theme';
 
@@ -34,6 +34,17 @@ type Props = {
 };
 
 export function OverlayModal({ visible, onDismiss, children }: Props) {
+  // When the sheet was opened, so the backdrop can ignore the touch that
+  // opened it.
+  //
+  // The sheet appears UNDER the finger that summoned it. The finger lifting,
+  // or an impatient second tap while a long list was still rendering, landed
+  // on the backdrop and dismissed it again -- which read as "the list flashes
+  // up and closes, so tap slowly". A short deaf period costs nothing: nobody
+  // opens a sheet in order to close it a fifth of a second later.
+  const openedAt = useRef(0);
+  useEffect(() => { if (visible) openedAt.current = Date.now(); }, [visible]);
+
   if (!visible) return null;
   return (
     <View style={styles.overlay}>
@@ -43,7 +54,10 @@ export function OverlayModal({ visible, onDismiss, children }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {/* Tapping the dimmed area dismisses; the sheet itself must not. */}
-        <Pressable style={styles.backdrop} onPress={onDismiss} />
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => { if (Date.now() - openedAt.current > 350) onDismiss(); }}
+        />
         <View style={styles.sheet}>{children}</View>
       </ScrollView>
     </View>

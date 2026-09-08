@@ -485,26 +485,40 @@ export default function Entry() {
       return (
         <View key={r.key}>
         <View style={styles.row}>
-          <Pressable style={styles.rowMain} onPress={() => setPicker({ section, key: r.key })}>
-            <Text
-              style={[
-                styles.rowName,
-                colour ? { color: colour } : null,
-                !a ? styles.rowNameEmpty : null,
-              ]}
-              numberOfLines={1}
-            >
-              {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
-            </Text>
-            {/* The receipt's own wording wins over the account path: the row
-                already names the account, and "Ayam Nanking" is what makes the
-                line recognisable against the paper in your hand. */}
-            {r.memo.trim() ? (
-              <Text style={styles.rowPath} numberOfLines={1}>{r.memo}</Text>
-            ) : a ? (
-              <Text style={styles.rowPath} numberOfLines={1}>{a.full_path}</Text>
+          <View style={styles.rowMain}>
+            <Pressable onPress={() => setPicker({ section, key: r.key })}>
+              <Text
+                style={[
+                  styles.rowName,
+                  colour ? { color: colour } : null,
+                  !a ? styles.rowNameEmpty : null,
+                ]}
+                numberOfLines={1}
+              >
+                {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
+              </Text>
+            </Pressable>
+            {/* The line under the account is an editable MEMO, not a label.
+                It was read-only, so a four-line entry could only be described
+                once, at the transaction, and every split went in blank -- the
+                account name was all you got back when reading the register.
+                A scan prefills it with the receipt's own wording ("Ayam
+                Nanking"), which is what makes a line recognisable against the
+                paper; typed by hand it does the same job.
+
+                The placeholder is the account's full path, so a row left alone
+                still shows where it is going, exactly as before. */}
+            {a ? (
+              <TextInput
+                style={styles.rowMemo}
+                value={r.memo}
+                onChangeText={(memo) => patch(section, r.key, { memo })}
+                placeholder={a.full_path}
+                placeholderTextColor={theme.inkFaint}
+                numberOfLines={1}
+              />
             ) : null}
-          </Pressable>
+          </View>
           <View style={styles.amountWrap}>
             {colour ? <Text style={[styles.minus, { color: colour }]}>−</Text> : null}
             <AmountInput
@@ -798,6 +812,10 @@ const styles = StyleSheet.create({
   // missing, so the others stay invisible until you fix that one.
   rowNameEmpty: { color: theme.disabled, fontFamily: fonts.sans },
   rowPath: { color: theme.inkFaint, fontSize: 11, marginTop: 2, fontFamily: fonts.sans },
+  rowMemo: {
+    color: theme.inkSoft, fontSize: 11, fontFamily: fonts.sans,
+    paddingVertical: 2, marginTop: 0, minHeight: 20,
+  },
   amountWrap: { flexDirection: 'row', alignItems: 'center' },
   minus: { fontSize: 13, fontFamily: fonts.mono, marginRight: 1 },
   amount: {
