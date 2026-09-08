@@ -513,8 +513,8 @@ export default function Entry() {
                 style={styles.rowMemo}
                 value={r.memo}
                 onChangeText={(memo) => patch(section, r.key, { memo })}
-                placeholder={a.full_path}
-                placeholderTextColor={theme.inkFaint}
+                placeholder="Note for this line"
+                placeholderTextColor={theme.disabled}
                 numberOfLines={1}
               />
             ) : null}
@@ -622,20 +622,6 @@ export default function Entry() {
           </Pressable>
         </View>
 
-        {/* Below the items, not above them.
-            It used to sit between the chips and the first row -- a full-width
-            target directly in the path between the funder chip and the account
-            you were reaching for, and it caught stray taps repeatedly. It also
-            reads better here: you say what something was after listing what
-            was in it, and a scan fills it from the merchant anyway. */}
-        <TextInput
-          style={styles.desc}
-          placeholder="What is this for"
-          placeholderTextColor={theme.inkFaint}
-          value={description}
-          onChangeText={setDescription}
-        />
-
         {moneyBack.length > 0 ? (
           <>
             <Text style={[styles.sectionLabel, styles.sectionSolo, { color: against }]}>
@@ -654,6 +640,20 @@ export default function Entry() {
             </Text>
           </>
         ) : null}
+
+        {/* The whole entry's description, and it has to be unmistakably that.
+            It sat directly under "+ Add item", where it read as a note for the
+            item above -- which is exactly what a per-line memo IS, one row
+            higher. Moved to the end, after the sections, and given a label of
+            its own so the two kinds of text cannot be confused. */}
+        <Text style={[styles.sectionLabel, styles.sectionSolo]}>DESCRIPTION</Text>
+        <TextInput
+          style={styles.desc}
+          placeholder="What the whole entry was, e.g. Lunch"
+          placeholderTextColor={theme.inkFaint}
+          value={description}
+          onChangeText={setDescription}
+        />
 
         {showSubtotal ? (
           <View style={styles.subtotal}>
@@ -812,6 +812,11 @@ const styles = StyleSheet.create({
   // missing, so the others stay invisible until you fix that one.
   rowNameEmpty: { color: theme.disabled, fontFamily: fonts.sans },
   rowPath: { color: theme.inkFaint, fontSize: 11, marginTop: 2, fontFamily: fonts.sans },
+  // The account's full path used to be the placeholder here, which made an
+  // empty memo read as a static label -- the field looked like data, so nobody
+  // could tell it was typeable. The prompt now says what it is. The path is
+  // gone from the row: it belongs to CHOOSING an account, which the picker
+  // already shows in full, and the name is what identifies the line afterwards.
   rowMemo: {
     color: theme.inkSoft, fontSize: 11, fontFamily: fonts.sans,
     paddingVertical: 2, marginTop: 0, minHeight: 20,
