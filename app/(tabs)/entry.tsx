@@ -268,6 +268,22 @@ export default function Entry() {
   // copper in an inflow (a fee taken out of what arrived). Never ink.
   const against = inflow ? theme.coral : theme.moss;
 
+  // The direction's OWN colour, applied to the four places that carry the
+  // whole screen's identity: the segment, the headline, the running total and
+  // the commit button.
+  //
+  // Money in is the settled green, and it is the easy one -- money arriving is
+  // never unwelcome. Money out is copper, so that spending does not read as
+  // the neutral default; the palette's one warm colour already means "look at
+  // this", and a payment is a thing worth looking at.
+  //
+  // A move stays INK on purpose, and that is the point of having three: your
+  // own money changing pockets is neither good nor bad and your net worth does
+  // not shift, so it gets the ground colour rather than a verdict. It also
+  // keeps copper meaning something -- if all three were coloured, none of the
+  // colours would say anything.
+  const tone = transferMode ? theme.ink : inflow ? theme.moss : theme.coral;
+
   // What the three sections are called, and what each may hold.
   const itemsLabel = transferMode ? 'TO' : `ITEMS · ${inflow ? 'INCOME' : 'EXPENSE'}`;
   const fundersLabel = transferMode ? 'FROM' : 'PAID BY';
@@ -772,7 +788,7 @@ This move may or may not have reached your book. The app will check and tell you
               the smallest thing on it, easy to start an entry without noticing.
               The largest text here now states the direction and changes colour
               with it, and the control beside it is bigger. */}
-          <Text style={[styles.h1, inflow && { color: theme.moss }]}>
+          <Text style={[styles.h1, { color: tone }]}>
             {transferMode ? 'Move money' : inflow ? 'Money in' : 'Money out'}
           </Text>
           <View style={styles.segmented}>
@@ -784,8 +800,12 @@ This move may or may not have reached your book. The app will check and tell you
                   onPress={() => setDirection(d)}
                   style={[
                     styles.seg,
-                    on && { backgroundColor: d === 'inflow' ? theme.moss : theme.ink },
-                    on && d === 'transfer' && { backgroundColor: theme.ink },
+                    on && {
+                      backgroundColor:
+                        d === 'inflow' ? theme.moss
+                          : d === 'outflow' ? theme.coral
+                          : theme.ink,
+                    },
                   ]}
                 >
                   <Text style={[styles.segText, on && styles.segTextOn]}>
@@ -936,7 +956,7 @@ This move may or may not have reached your book. The app will check and tell you
                 ? (balanced ? 'Balanced' : 'Not balanced yet')
                 : transferMode ? 'Moving' : inflow ? 'Total in' : 'Total out'}
           </Text>
-          <Text style={[styles.footerAmount, inflow && { color: theme.moss }]} numberOfLines={1}>
+          <Text style={[styles.footerAmount, { color: tone }]} numberOfLines={1}>
             {crossCurrency
               ? formatAmount(amt(funders[0]), fromCcy ?? 'IDR')
               : formatAmount(required, currency)}
@@ -945,7 +965,7 @@ This move may or may not have reached your book. The app will check and tell you
         <Pressable
           style={[
             styles.commit,
-            inflow && { backgroundColor: theme.moss },
+            { backgroundColor: tone },
             !ready && styles.commitOff,
           ]}
           disabled={!ready}
