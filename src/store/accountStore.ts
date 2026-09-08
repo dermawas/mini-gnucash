@@ -20,6 +20,12 @@ type Store = {
   /** Set when the list came from cache rather than the server. */
   cachedAt: string | null;
   loadedOnce: boolean;
+  /**
+   * Bumped every time the book underneath changes -- i.e. on `reset()`, which
+   * is what switching ledgers calls. Screens holding half-built work watch
+   * this so their state cannot outlive the book it was composed against.
+   */
+  epoch: number;
 
   load: () => Promise<void>;
   byGuid: (guid: string) => Account | undefined;
@@ -36,6 +42,7 @@ export const useAccounts = create<Store>((set, get) => ({
   error: null,
   cachedAt: null,
   loadedOnce: false,
+  epoch: 0,
 
   load: async () => {
     if (get().loading) return;
@@ -103,7 +110,10 @@ export const useAccounts = create<Store>((set, get) => ({
     return types && types.length ? all.filter((a) => types.includes(a.account_type)) : all;
   },
 
-  reset: () => set({ accounts: [], loading: false, error: null, cachedAt: null, loadedOnce: false }),
+  reset: () => set((st) => ({
+    accounts: [], loading: false, error: null, cachedAt: null, loadedOnce: false,
+    epoch: st.epoch + 1,
+  })),
 }));
 
 /** Asset accounts, which is what both sides of a transfer must be. */

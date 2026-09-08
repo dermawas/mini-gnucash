@@ -139,6 +139,7 @@ export default function Entry() {
   const loadAccounts = useAccounts((s) => s.load);
   const postable = useAccounts((s) => s.postable);
   const hasTradingAccount = useAccounts((s) => s.hasTradingAccount);
+  const accountsEpoch = useAccounts((s) => s.epoch);
   const usesTrading = useConnection((s) => s.tradingAccounts);
   const accountCount = useAccounts((s) => s.accounts.length);
   const canWrite = useConnection((s) => s.canWrite());
@@ -217,13 +218,71 @@ export default function Entry() {
   // with a stale "but the receipt says..." warning still on screen. A
   // backdated entry written by accident is exactly what the date guard exists
   // to prevent, so the reset has to be one thing that cannot be half-applied.
-  function reset() {
+  /**
+   * Empty the form.
+   *
+   * The funding account is normally KEPT: you pay for most things from the
+   * same place, and re-picking it after every entry was the single most
+   * repeated tap in the app. It is dropped only when the book itself has
+   * changed, because then the guid belongs to a different ledger.
+   */
+  function reset(keepFunder = true) {
     setItems([newRow()]);
     setMoneyBack([]);
-    setFunders([newRow(funders[0]?.accountGuid ?? null)]);
+    setFunders([newRow(keepFunder ? funders[0]?.accountGuid ?? null : null)]);
     setDescription('');
     setPrintedTotal(null);
     setPostDate(todayIso());
+  }
+
+  // A half-built entry must not survive a change of ledger.
+  //
+  // Switching ledgers reloads the chart of accounts but left this screen
+  // holding rows composed against the OLD book. Because the dev clone shares
+  // its guids with production, those rows resolved perfectly against the wrong
+  // ledger: a cross-currency move typed against dev sat on screen, fully
+  // valid, with a live commit button, after the app had been switched back to
+  // production. It would have written it there.
+  //
+  // Against a genuinely different book the guids would simply fail to resolve
+  // and the rows would blank themselves, which is the same bug wearing a
+  // costume that happens to be harmless.
+  const lastEpoch = useRef(accountsEpoch);
+  useEffect(() => {
+    if (lastEpoch.current === accountsEpoch) return;
+    lastEpoch.current = accountsEpoch;
+    reset(false);
+    setDirection('outflow');
+    setPicker(null);
+  }, [accountsEpoch]);
+
+  /**
+   * Change direction, clearing what no longer means anything.
+   *
+   * The three directions share one set of rows, and the SECTIONS mean
+   * different things in each: an expense account sitting under "ITEMS ·
+   * INCOME" is not a mistake the user made, it is one the screen made by
+   * keeping it. Switching therefore starts the entry again -- but asks first
+   * when there is something to lose, because the usual reason to switch is
+   * having tapped the wrong segment before typing anything, and that case
+   * should cost nothing.
+   */
+  function chooseDirection(d: 'outflow' | 'inflow' | 'transfer') {
+    if (d === direction) return;
+    if (!dirty) { setDirection(d); return; }
+    const name = d === 'outflow' ? 'Money out' : d === 'inflow' ? 'Money in' : 'Move money';
+    Alert.alert(
+      `Start again as ${name}?`,
+      'The accounts on this entry only make sense one way round, so switching clears them. The account you are paying from is kept.',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Switch and clear',
+          style: 'destructive',
+          onPress: () => { reset(); setDirection(d); },
+        },
+      ],
+    );
   }
 
   // Android back, in three layers.
@@ -247,7 +306,7 @@ export default function Entry() {
             'Nothing has been written to your book yet.',
             [
               { text: 'Keep editing', style: 'cancel' },
-              { text: 'Discard', style: 'destructive', onPress: reset },
+              { text: 'Discard', style: 'destructive', onPress: () => reset() },
             ],
           );
           return true;
@@ -943,7 +1002,7 @@ ${extras.join(' · ')}` : head;
               return (
                 <Pressable
                   key={d}
-                  onPress={() => setDirection(d)}
+                  onPress={() => chooseDirection(d)}
                   style={[
                     styles.seg,
                     on && {
