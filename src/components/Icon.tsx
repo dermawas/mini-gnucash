@@ -27,7 +27,7 @@ export type IconName =
   | 'accounts' | 'spend' | 'receipt' | 'settings'
   | 'show' | 'hide' | 'sync' | 'offline'
   | 'cleared' | 'uncleared' | 'add' | 'edit'
-  | 'split' | 'scan' | 'conflict' | 'chevron' | 'chevronLeft';
+  | 'split' | 'scan' | 'conflict' | 'chevron' | 'chevronLeft' | 'transfer';
 
 export function Icon({
   name, size = 24, color = theme.ink, strokeWidth = 1.5,
@@ -137,6 +137,8 @@ function paths(name: IconName, color: ColorValue, s: object) {
           <Path d="M12 8v5M12 16v.5" {...s} />
         </>
       );
+    case 'transfer':
+      return <Path d="M4 8h14l-3-3M20 16H6l3 3" {...s} />;
     case 'chevron':
       return <Path d="M9 6l6 6-6 6" {...s} />;
     // Not in the handoff, which only draws the forward chevron. Mirrored

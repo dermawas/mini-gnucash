@@ -216,19 +216,12 @@ export default function Accounts() {
       ) : (
         <View style={styles.actions}>
           <View style={styles.actionsInner}>
-            <Pressable style={styles.action} onPress={() => router.push('/entry/spend')}>
+            <Pressable style={styles.action} onPress={() => router.push('/entry')}>
               <Icon name="spend" size={16} color={theme.ink} />
-              <Text style={styles.actionText} numberOfLines={1}>Spend</Text>
+              <Text style={styles.actionText} numberOfLines={1}>Entry</Text>
             </Pressable>
-            <Pressable
-              style={styles.action}
-              onPress={() => router.push('/entry/spend?direction=inflow')}
-            >
-              <Icon name="add" size={16} color={theme.ink} />
-              <Text style={styles.actionText} numberOfLines={1}>Income</Text>
-            </Pressable>
-            <Pressable style={styles.action} onPress={() => router.push('/entry/transfer')}>
-              <Icon name="split" size={16} color={theme.ink} />
+            <Pressable style={styles.action} onPress={() => router.push('/transfer')}>
+              <Icon name="transfer" size={16} color={theme.ink} />
               <Text style={styles.actionText} numberOfLines={1}>Transfer</Text>
             </Pressable>
             <Pressable style={styles.action} onPress={() => router.push('/scan/review')}>

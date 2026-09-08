@@ -392,6 +392,44 @@ const COA_CACHE_KEY = 'mgc_coa_cache';
 
 type CoaCache = { accounts: Account[]; cachedAt: string };
 
+/**
+ * One entry as N splits over accounts of any type -- `mgc_record_entry`.
+ *
+ * `amount` is SIGNED and in the entry's currency: negative means money leaves
+ * that account. Exactly one split MAY omit it, and that split is derived
+ * server-side as the negation of the already-rounded others, so the ordinary
+ * one-funder entry balances by construction rather than by being checked.
+ *
+ * The caller never types a sign. `app/(tabs)/entry.tsx` derives it from which
+ * section a row is in plus the entry's direction.
+ */
+export type EntrySplit = {
+  account_guid: string;
+  /** Omit entirely to have this split absorb the remainder. */
+  amount?: number;
+  memo?: string;
+};
+
+export async function recordEntry(params: {
+  requestId: string;
+  splits: EntrySplit[];
+  postDate: string;
+  description: string;
+}) {
+  return callRpc<{
+    status: string;
+    tx_guid: string;
+    currency: string;
+    split_count: number;
+    balanced_by: number | null;
+  }>('mgc_record_entry', {
+    p_request_id: params.requestId,
+    p_splits: params.splits,
+    p_post_date: params.postDate,
+    p_description: params.description,
+  });
+}
+
 export type AccountsResult =
   | { ok: true; accounts: Account[]; fromCache: false }
   | { ok: true; accounts: Account[]; fromCache: true; cachedAt: string }

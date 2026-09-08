@@ -188,7 +188,7 @@ export default function ScanReview() {
         'Money moving into your own wallet is a transfer, not an expense. The transfer screen takes both amounts and derives the rate itself.',
         [
           { text: 'Not now', style: 'cancel' },
-          { text: 'Open transfer', onPress: () => router.replace('/entry/transfer') },
+          { text: 'Open transfer', onPress: () => router.replace('/transfer') },
         ],
       );
       return;

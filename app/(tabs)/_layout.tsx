@@ -5,19 +5,17 @@
 // ground, a hairline on top, 22px icons over 11pt labels, ink when active and
 // #8E9188 when not.
 //
-// The handoff draws FOUR tabs -- Accounts, Spend, Receipt, Settings. This bar
-// has two, and that is a deliberate hold rather than an oversight.
+// Four tabs, as the handoff draws them: Accounts, Entry, Transfer, Settings.
 //
-// Making Spend a tab means the tab keeps its route params. Income is the same
-// screen entered as `?direction=inflow`, so once that param is on the tab,
-// tapping "Spend" in the bar later can land in Income mode with nothing on
-// screen saying so -- money written the wrong way round in a ledger, from a
-// navigation detail. Fixing it properly means lifting direction out of the URL
-// and putting a visible control on the screen, which is a change to how Spend
-// works, not to how it looks.
+// This was two tabs until 2026-09-08, and the objection to widening it was
+// specific: Spend as a tab kept its route params, and Income was the same
+// screen at `?direction=inflow`, so tapping "Spend" later could land in Income
+// mode with nothing on screen saying so -- money written the wrong way round
+// from a navigation detail.
 //
-// Receipt could move on its own, but a three-tab bar matches neither design.
-// Both stay pushed routes from the Accounts action row until that is settled.
+// Board Turn 5 removes that. Direction is now in-screen state with an Out/In
+// segmented control that recolours the whole surface, so there is no param to
+// linger and no silent mode. The objection is gone and the tab is safe.
 
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -57,6 +55,20 @@ export default function TabsLayout() {
         options={{
           title: 'Accounts',
           tabBarIcon: ({ color }) => <Icon name="accounts" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="entry"
+        options={{
+          title: 'Entry',
+          tabBarIcon: ({ color }) => <Icon name="spend" size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="transfer"
+        options={{
+          title: 'Transfer',
+          tabBarIcon: ({ color }) => <Icon name="transfer" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
