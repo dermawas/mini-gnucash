@@ -25,6 +25,8 @@ type Store = {
   byGuid: (guid: string) => Account | undefined;
   /** Accounts that can actually hold a transaction. */
   postable: (types?: string[]) => Account[];
+  /** Whether the book has a usable trading account for this commodity. */
+  hasTradingAccount: (commodityGuid: string | null) => boolean;
   reset: () => void;
 };
 
@@ -56,6 +58,29 @@ export const useAccounts = create<Store>((set, get) => ({
   },
 
   byGuid: (guid) => get().accounts.find((a) => a.guid === guid),
+
+  /**
+   * Does a trading account exist for this commodity?
+   *
+   * Mirrors `mgc_trading_account` in `sql/20_helpers.sql` predicate for
+   * predicate: type TRADING, this commodity, not a placeholder, and parented
+   * under an account NAMED for the commodity's namespace.
+   *
+   * Kept deliberately in step with the server. If the two ever disagree the
+   * phone will either block a write the server would have taken, or offer one
+   * it is going to refuse -- and the second is what this exists to prevent.
+   */
+  hasTradingAccount: (commodityGuid) => {
+    if (!commodityGuid) return false;
+    const all = get().accounts;
+    return all.some((a) => {
+      if (a.account_type !== 'TRADING') return false;
+      if (a.commodity_guid !== commodityGuid) return false;
+      if (a.placeholder !== 0) return false;
+      const parent = all.find((p) => p.guid === a.parent_guid);
+      return !!parent && parent.name === a.commodity_namespace;
+    });
+  },
 
   postable: (types) => {
     const all = get().accounts.filter(

@@ -138,6 +138,8 @@ export default function Entry() {
   const byGuid = useAccounts((s) => s.byGuid);
   const loadAccounts = useAccounts((s) => s.load);
   const postable = useAccounts((s) => s.postable);
+  const hasTradingAccount = useAccounts((s) => s.hasTradingAccount);
+  const usesTrading = useConnection((s) => s.tradingAccounts);
   const accountCount = useAccounts((s) => s.accounts.length);
   const canWrite = useConnection((s) => s.canWrite());
   const blockedReason = useConnection((s) => s.writeBlockedReason());
@@ -396,6 +398,14 @@ export default function Entry() {
   // the picker cannot prevent that, only notice it.
   const goneStale = chosen.find((a) => a.hidden === 1 || a.placeholder === 1);
   const mixedCurrency = !!chosen.find((a) => a.commodity_guid !== commodityGuid);
+  // A cross-currency move in a trading-accounts book needs a trading account
+  // for BOTH currencies, and `mgc_transfer` refuses rather than creating one.
+  // The phone already holds every account including the trading tree, so it can
+  // say this before the button lights up instead of after the write bounces.
+  const missingTrading =
+    crossCurrency && usesTrading
+      ? [funderAcct, itemAcct].find((a) => a && !hasTradingAccount(a.commodity_guid))
+      : undefined;
   const nonAsset = [itemAcct, funderAcct]
     .find((a) => a && !TRANSFERABLE.includes(a.account_type));
   const scopeProblem =
@@ -403,6 +413,9 @@ export default function Entry() {
       ? `${goneStale.name} is hidden in GnuCash now. Choose another account.`
       : chosen.find((a) => a.commodity_namespace !== 'CURRENCY')
       ? `${chosen.find((a) => a.commodity_namespace !== 'CURRENCY')!.name} is not a currency account. Stocks, bonds and crypto belong in GnuCash desktop.`
+      : missingTrading
+        ? `Your book uses trading accounts but has none for ${
+            missingTrading.commodity_mnemonic}. Make one ${fromCcy}/${toCcy} transfer in GnuCash desktop — it creates these by itself — and this will work from the phone afterwards.`
       : crossCurrency
         ? null
       : mixedCurrency
