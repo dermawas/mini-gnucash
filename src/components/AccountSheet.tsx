@@ -15,7 +15,7 @@
 //      two accounts called IPOT -- one ASSET holding broker cash, one EXPENSE
 //      holding its fees -- and the name alone cannot tell them apart.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { OverlayModal } from './OverlayModal';
 import { useAccounts } from '../store/accountStore';
@@ -53,6 +53,15 @@ export function AccountSheet({
 }: Props) {
   const [query, setQuery] = useState('');
   const postable = useAccounts((s) => s.postable);
+
+  // Clear the search on every OPEN, not on every close.
+  //
+  // Clearing at each exit was the first attempt and it leaked in practice: a
+  // search for "uob" while choosing who paid was still sitting in the box when
+  // the expense picker opened, silently hiding every account that does not
+  // match. Driving it from `visible` instead means there is no exit path left
+  // to forget -- backdrop, Cancel, selection, or anything added later.
+  useEffect(() => { if (visible) setQuery(''); }, [visible, title]);
 
   const rows = useMemo(() => {
     const list = postable(types);

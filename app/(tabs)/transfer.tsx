@@ -18,10 +18,12 @@
 // client-side recomputation of what was typed.
 // ===========================================================================
 
-import { useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, BackHandler,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import AmountInput from '../../src/components/AmountInput';
 import { AccountPicker } from '../../src/components/AccountPicker';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -53,6 +55,43 @@ export default function Transfer() {
   // Previously hardcoded to today(), so a transfer done last week could not
   // be entered from the phone at all.
   const [postDate, setPostDate] = useState<string>(todayIso());
+
+  // Android back, same three layers as the Entry screen and for the same
+  // reason: AccountPicker sits in an OverlayModal, which is a plain View
+  // rather than a native <Modal>, so back does not dismiss it for free -- it
+  // sailed past an open picker and closed the app, taking the half-typed
+  // transfer with it. Transfer became a tab on 2026-09-08, which is what
+  // exposed this; as a pushed route back had somewhere harmless to go.
+  const dirty = !!fromGuid || !!toGuid || !!fromRaw.trim() || !!toRaw.trim()
+    || description.trim().length > 0;
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (picker) { setPicker(null); return true; }
+        if (dirty) {
+          Alert.alert(
+            'Discard this transfer?',
+            'Nothing has been written to your book yet.',
+            [
+              { text: 'Keep editing', style: 'cancel' },
+              {
+                text: 'Discard',
+                style: 'destructive',
+                onPress: () => {
+                  setFromGuid(null); setToGuid(null);
+                  setFromRaw(''); setToRaw(''); setDescription('');
+                },
+              },
+            ],
+          );
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+    }, [picker, dirty]),
+  );
 
   const from = fromGuid ? byGuid(fromGuid) : undefined;
   const to = toGuid ? byGuid(toGuid) : undefined;

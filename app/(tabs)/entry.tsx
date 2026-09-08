@@ -48,7 +48,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert,
+  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
@@ -107,6 +107,56 @@ export default function Entry() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadAccounts(); }, [loadAccounts]));
+
+  // Anything the user has actually put in. The funder is pre-filled from the
+  // last entry, so having one is NOT dirt -- only a funder they changed or
+  // added counts.
+  const dirty =
+    items.some((r) => r.accountGuid || r.raw.trim() || r.memo.trim()) ||
+    moneyBack.length > 0 ||
+    funders.length > 1 ||
+    funders.some((r) => r.raw.trim()) ||
+    description.trim().length > 0;
+
+  function reset() {
+    setItems([newRow()]);
+    setMoneyBack([]);
+    setFunders([newRow(funders[0]?.accountGuid ?? null)]);
+    setDescription('');
+  }
+
+  // Android back, in three layers.
+  //
+  // The account sheet is NOT a native <Modal> -- OverlayModal is an absolutely
+  // positioned View, for reasons its own header explains at length. The cost is
+  // that Android does not dismiss it for free: back sailed straight past an
+  // open picker and closed the whole app. That is how a GoCar entry was lost.
+  //
+  // So: an open sheet closes first, then a half-typed entry asks before it is
+  // thrown away, and only an empty screen lets Android do its normal thing and
+  // leave. Returning false is what makes the last case behave like a tab root
+  // should, rather than trapping the user in the app.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (picker) { setPicker(null); return true; }
+        if (dirty) {
+          Alert.alert(
+            'Discard this entry?',
+            'Nothing has been written to your book yet.',
+            [
+              { text: 'Keep editing', style: 'cancel' },
+              { text: 'Discard', style: 'destructive', onPress: reset },
+            ],
+          );
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [picker, dirty, items, moneyBack, funders, description]),
+  );
 
   const inflow = direction === 'inflow';
   // The one variable the whole sign scheme rests on. See the header.
