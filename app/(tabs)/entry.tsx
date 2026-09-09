@@ -1107,11 +1107,18 @@ ${extras.join(' · ')}` : head;
           </View>
         </View>
 
+        {/* Splitting a payment is a fact about the PAYMENT, so it belongs
+            beside the account paying, not down in the item actions where it
+            sat next to Money back and read as another kind of line. */}
         <View style={styles.chips}>
           <DateField value={postDate} onChange={setPostDate} variant="chip" />
           <Chip
             label={`${funderVerb} ${funderLabel} ▾`}
             onPress={() => setPicker({ section: 'funders', key: funders[0].key })}
+          />
+          <Chip
+            label={transferMode ? '+ Another source' : '+ Split payment'}
+            onPress={() => setFunders([...funders, newRow()])}
           />
         </View>
 
@@ -1148,11 +1155,6 @@ ${extras.join(' · ')}` : head;
               <Text style={[styles.link, { color: against }]}>↩ Money back</Text>
             </Pressable>
           )}
-          <Pressable onPress={() => setFunders([...funders, newRow()])}>
-            <Text style={styles.link}>
-              {transferMode ? '+ Another source' : 'Split payment'}
-            </Text>
-          </Pressable>
         </View>
 
         {moneyBack.length > 0 ? (
@@ -1225,11 +1227,17 @@ ${extras.join(' · ')}` : head;
           </View>
         ) : null}
 
+        {/* Names the GAP rather than leaving it to be worked out. The old
+            wording gave two figures and left you to subtract them, which is
+            the one bit of arithmetic this screen exists to do for you. */}
         {totalMismatch ? (
-          <Text style={styles.warn}>
-            These rows come to {formatAmount(required, currency)}, but{' '}
-            {printedTotal != null ? 'the receipt says' : 'the scan read'}{' '}
-            {formatAmount(totalBaseline!, currency)}. Check the amounts before saving.
+          <Text style={[styles.warn, styles.warnStrong]}>
+            {printedTotal != null ? 'Receipt total' : 'Scan read'}{' '}
+            {formatAmount(totalBaseline!, currency)}. These rows come to{' '}
+            {formatAmount(required, currency)},{' '}
+            {required < totalBaseline!
+              ? `leaving ${formatAmount(totalBaseline! - required, currency)} unallocated.`
+              : `which is ${formatAmount(required - totalBaseline!, currency)} too much.`}
           </Text>
         ) : null}
         {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}
@@ -1426,6 +1434,9 @@ const styles = StyleSheet.create({
   subValue: { color: theme.inkSoft, fontSize: 11, fontFamily: fonts.mono },
   subValueStrong: { color: theme.ink, fontFamily: fonts.monoMedium },
   warn: { color: theme.coral, fontSize: 12, lineHeight: 17, marginTop: 14, fontFamily: fonts.sans },
+  // The mismatch warning alone is bold, because it is the only one here that
+  // also disables the button. The others advise; this one stops you.
+  warnStrong: { fontFamily: fonts.sansSemi },
   footer: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12,

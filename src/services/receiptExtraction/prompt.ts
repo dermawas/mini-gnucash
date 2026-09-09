@@ -65,7 +65,17 @@ export const RESPONSE_SCHEMA = {
       // BAMBU" twenty minutes apart, which is what defeated merchantMemory.
       description: `The BUSINESS name, as the business trades under. NOT its address, NOT the mall, shophouse, plaza or complex it sits in, and NOT a branch or outlet suffix. A receipt header often carries several of these on consecutive lines — choose the one naming the business itself. For example "Bahagia Chinese Food", not "Ruko D'Bali"; "Holland Bakery", not "Holland Bakery Pondok Bambu". Report the same name for the same shop every time, so two photos of one merchant agree.`,
     },
-    date: { type: 'string', description: 'YYYY-MM-DD' },
+    // Required, like every other field, because Gemini's responseSchema has no
+    // optional. So the ABSENCE of a date needs a legal value to report, or the
+    // model has to invent one -- and it does. A Gocar receipt on 2026-09-09
+    // showed only "Hari ini, 16:51" and came back dated 2026-06-06, a date
+    // that appears nowhere on the image. `entry.tsx` treats an empty string as
+    // "no date" and leaves the field on today, which is the right answer for a
+    // receipt that says "today".
+    date: {
+      type: 'string',
+      description: 'The calendar date printed on the receipt, as YYYY-MM-DD. Return an EMPTY STRING if the receipt shows no explicit calendar date — one that says only "today", "hari ini", "kemarin" or a bare time of day has no date to read. Never infer, guess or complete a date that is not printed; an empty string is always better than a plausible invention.',
+    },
     currency: { type: 'string', description: 'e.g. IDR, USD' },
     receipt_type: {
       type: 'string',

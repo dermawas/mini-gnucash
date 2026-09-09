@@ -69,10 +69,13 @@ export function dateConcern(date: string): string | null {
       / 86400000,
   );
   if (days > 0) {
-    return `This is dated ${days} day${days === 1 ? '' : 's'} in the future. A receipt cannot be, so the date was almost certainly misread — correct it before saving.`;
+    return `This is dated ${days} day${days === 1 ? '' : 's'} in the future. A receipt cannot be — correct it before saving.`;
   }
   if (-days > DATE_WARN_DAYS) {
-    return `This is dated ${-days} days ago. That is fine for an old receipt, but check it — a misread year looks exactly like this.`;
+    // Short on purpose. The long version explained WHY a misread year looks
+    // like this, which is worth knowing once and re-reading never. The number
+    // and the question are the parts that do the work.
+    return `This is dated ${-days} days ago. Is that correct?`;
   }
   return null;
 }

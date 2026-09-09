@@ -129,5 +129,8 @@ const styles = StyleSheet.create({
   today: { paddingVertical: 10, paddingHorizontal: 14 },
   todayText: { color: theme.ink, fontSize: 13, fontFamily: fonts.sansSemi },
   caption: { color: theme.inkFaint, fontSize: 12, marginTop: 6, fontFamily: fonts.sans },
-  warn: { color: theme.coral, fontSize: 12, lineHeight: 18, marginTop: 8, fontFamily: fonts.sans },
+  // Bold, matching the total-mismatch warning on the entry screen. Both are
+  // asking you to check a number before it reaches the book, so they should
+  // read as the same kind of thing.
+  warn: { color: theme.coral, fontSize: 12, lineHeight: 18, marginTop: 8, fontFamily: fonts.sansSemi },
 });
