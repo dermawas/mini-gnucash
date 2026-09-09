@@ -379,7 +379,10 @@ export default function Entry() {
 
   // What the three sections are called, and what each may hold.
   const itemsLabel = transferMode ? 'TO' : `ITEMS · ${inflow ? 'INCOME' : 'EXPENSE'}`;
-  const fundersLabel = transferMode ? 'FROM' : 'PAID BY';
+  // Matches `funderVerb` below. The chip has always said "Paid from"; the
+  // section heading said "PAID BY", which is a different preposition for the
+  // same account.
+  const fundersLabel = transferMode ? 'FROM' : inflow ? 'RECEIVED IN' : 'PAID FROM';
   const funderVerb = transferMode ? 'From' : inflow ? 'Received in' : 'Paid from';
   // In transfer mode the destination may be an account of your own OR an
   // expense -- a transfer fee is an ordinary expense split sitting beside the
@@ -1122,6 +1125,25 @@ ${extras.join(' · ')}` : head;
           />
         </View>
 
+        {/* Directly under the chips, because this section IS the payment chip
+            opened up. Below the items it read as something that happens after
+            them, when it is the same fact stated in more detail.
+
+            Normally one funder needs no section of its own -- the chip names
+            it. A cross-currency move is the exception: the amount LEAVING is a
+            second independent number, and there is nowhere else to type it. */}
+        {funders.length > 1 || crossCurrency ? (
+          <>
+            <SectionLabel style={styles.sectionSolo}>{fundersLabel}</SectionLabel>
+            {rowsFor('funders')}
+            <Text style={styles.hint}>
+              {crossCurrency
+                ? `Both amounts are stated: ${fromCcy} leaving, ${toCcy} arriving. The rate follows from them.`
+                : 'Leave the last one empty and it takes whatever is left.'}
+            </Text>
+          </>
+        ) : null}
+
         <View style={styles.sectionHead}>
           <SectionLabel>{itemsLabel}</SectionLabel>
           <Pressable
@@ -1166,21 +1188,6 @@ ${extras.join(' · ')}` : head;
           </>
         ) : null}
 
-        {/* Normally one funder needs no section of its own -- the chip at the
-            top names it. A cross-currency move is the exception: the amount
-            LEAVING is a second independent number, and there is nowhere else
-            on the screen to type it. */}
-        {funders.length > 1 || crossCurrency ? (
-          <>
-            <SectionLabel style={styles.sectionSolo}>{fundersLabel}</SectionLabel>
-            {rowsFor('funders')}
-            <Text style={styles.hint}>
-              {crossCurrency
-                ? `Both amounts are stated: ${fromCcy} leaving, ${toCcy} arriving. The rate follows from them.`
-                : 'Leave the last one empty and it takes whatever is left.'}
-            </Text>
-          </>
-        ) : null}
 
         {/* Read-only, and it must stay that way. See the note by `rate`. */}
         {crossCurrency ? (
@@ -1227,11 +1234,18 @@ ${extras.join(' · ')}` : head;
           </View>
         ) : null}
 
-        {/* Names the GAP rather than leaving it to be worked out. The old
-            wording gave two figures and left you to subtract them, which is
-            the one bit of arithmetic this screen exists to do for you. */}
+        {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}
+        {!canWrite && blockedReason ? <Text style={styles.warn}>{blockedReason}</Text> : null}
+      </ScrollView>
+
+      <View style={[styles.footerWrap, keyboard > 0 ? { marginBottom: keyboard } : null]}>
+        {/* Above the number pad on purpose. Sitting in the scroll body it fell
+            below the description, which the pad covers -- so the one moment
+            you need it, typing an amount, was the one moment it was invisible.
+            It also names the GAP rather than printing two figures and leaving
+            you to subtract them. */}
         {totalMismatch ? (
-          <Text style={[styles.warn, styles.warnStrong]}>
+          <Text style={[styles.warn, styles.warnStrong, styles.warnFooter]}>
             {printedTotal != null ? 'Receipt total' : 'Scan read'}{' '}
             {formatAmount(totalBaseline!, currency)}. These rows come to{' '}
             {formatAmount(required, currency)},{' '}
@@ -1240,11 +1254,7 @@ ${extras.join(' · ')}` : head;
               : `which is ${formatAmount(required - totalBaseline!, currency)} too much.`}
           </Text>
         ) : null}
-        {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}
-        {!canWrite && blockedReason ? <Text style={styles.warn}>{blockedReason}</Text> : null}
-      </ScrollView>
-
-      <View style={[styles.footer, keyboard > 0 ? { marginBottom: keyboard } : null]}>
+        <View style={styles.footer}>
         <View style={styles.footerTotal}>
           <Text style={styles.footerSub} numberOfLines={1}>
             {crossCurrency
@@ -1272,6 +1282,7 @@ ${extras.join(' · ')}` : head;
         >
           <Text style={styles.commitText} numberOfLines={1}>{commitText}</Text>
         </Pressable>
+        </View>
       </View>
 
       <AccountSheet
@@ -1437,11 +1448,16 @@ const styles = StyleSheet.create({
   // The mismatch warning alone is bold, because it is the only one here that
   // also disables the button. The others advise; this one stops you.
   warnStrong: { fontFamily: fonts.sansSemi },
+  // The border and background live on the wrapper now, so the warning above
+  // the total sits inside the same bar rather than floating over the list.
+  footerWrap: {
+    borderTopWidth: 1, borderTopColor: theme.hairlineStrong, backgroundColor: theme.bg,
+  },
   footer: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12,
-    borderTopWidth: 1, borderTopColor: theme.hairlineStrong, backgroundColor: theme.bg,
   },
+  warnFooter: { paddingHorizontal: 20, marginTop: 10 },
   footerTotal: { flex: 1, marginRight: 12 },
   footerSub: { color: theme.inkFaint, fontSize: 11, fontFamily: fonts.sans },
   footerAmount: {

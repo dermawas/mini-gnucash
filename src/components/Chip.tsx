@@ -38,11 +38,11 @@ const styles = StyleSheet.create({
   chip: {
     backgroundColor: theme.surface, borderRadius: 8,
     borderWidth: 1, borderColor: theme.hairlineStrong,
-    paddingVertical: 9, paddingHorizontal: 12,
+    paddingVertical: 6, paddingHorizontal: 10,
     // So a long account name shortens instead of pushing the date chip off
     // the row. Harmless where there is room.
     flexShrink: 1,
   },
   warn: { borderColor: theme.amber },
-  text: { color: theme.ink, fontSize: 13, fontFamily: fonts.sans },
+  text: { color: theme.ink, fontSize: 12, fontFamily: fonts.sans },
 });
