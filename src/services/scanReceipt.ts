@@ -16,7 +16,8 @@
 
 import * as ImagePicker from 'expo-image-picker';
 import { extractReceipt } from './receiptExtraction';
-import { getAiKey, getAiModel } from './aiKey';
+import { getAiModel } from './aiKey';
+import { adoptLegacyKey, keysForScan, markExhausted, clearExhausted } from './aiKeys';
 import { matchLine } from './accountMatch';
 import { loadMemory, recall } from './merchantMemory';
 import { roundingUnit } from '../utils/currency';
@@ -72,8 +73,10 @@ export async function scanReceipt(params: {
 }): Promise<ScanOutcome> {
   const { source, currency, scu, candidates } = params;
 
-  const apiKey = await getAiKey();
-  if (!apiKey) {
+  // Folds a key saved before the key list existed into it. A no-op afterwards.
+  await adoptLegacyKey();
+  const keys = await keysForScan();
+  if (keys.length === 0) {
     return {
       kind: 'error',
       title: 'No Gemini key',
@@ -107,16 +110,54 @@ export async function scanReceipt(params: {
     };
   }
 
-  const result = await extractReceipt({
-    base64Image: asset.base64,
-    mimeType: asset.mimeType ?? 'image/jpeg',
-    apiKey,
-    model: await getAiModel(),
-    roundingUnit: roundingUnit(currency ?? 'IDR', scu),
-  });
+  // Walk the keys. `keysForScan` has already put them in round-robin order and
+  // moved the cursor on, so this loop only decides when to give up.
+  //
+  // Only an `exhausted` failure moves to the next key. Anything else -- a bad
+  // key, a malformed request, no connection -- would fail identically on all
+  // of them, and trying anyway would spend the other keys' quota to arrive at
+  // the same answer three times over.
+  const model = await getAiModel();
+  const unit = roundingUnit(currency ?? 'IDR', scu);
 
-  if (!result.ok) {
-    return { kind: 'error', title: 'Could not read that receipt', message: result.message };
+  let result: Awaited<ReturnType<typeof extractReceipt>> | null = null;
+  let exhausted = 0;
+
+  for (const key of keys) {
+    result = await extractReceipt({
+      base64Image: asset.base64,
+      mimeType: asset.mimeType ?? 'image/jpeg',
+      apiKey: key.secret,
+      model,
+      roundingUnit: unit,
+    });
+
+    if (result.ok) {
+      // A success is the only thing that clears the Settings flag. It has to
+      // be a real one: a key that answered is demonstrably back, whereas a
+      // cooldown elapsing proves nothing.
+      await clearExhausted(key.id);
+      break;
+    }
+    if (result.kind === 'exhausted') {
+      await markExhausted(key.id);
+      exhausted += 1;
+      continue;
+    }
+    break;
+  }
+
+  if (!result || !result.ok) {
+    // When every key is out, say that rather than repeating a message written
+    // for one key. "Try again shortly" is misleading advice when the answer is
+    // that all of them are spent.
+    const message =
+      exhausted > 0 && exhausted === keys.length
+        ? keys.length === 1
+          ? "Your Gemini key has hit its rate limit or quota. Try again shortly, or add another key in Settings."
+          : `All ${keys.length} of your Gemini keys have hit their limits. Try again shortly. If they ran out together, they may share one Google project's quota.`
+        : (result?.message ?? "Couldn't read that receipt.");
+    return { kind: 'error', title: 'Could not read that receipt', message };
   }
 
   // A topup moves money between two of the user's own accounts. Recording it

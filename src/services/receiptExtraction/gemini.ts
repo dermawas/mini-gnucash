@@ -91,6 +91,40 @@ type GeminiErrorBody = {
   };
 };
 
+/**
+ * Why a call failed, for code rather than for a person.
+ *
+ * `friendlyGeminiError` below turns the same response into a sentence, which
+ * is right for the screen and useless for deciding what to do next. Failing
+ * over to another key must happen on `exhausted` and MUST NOT happen on
+ * `invalid_key` -- walking the whole ring on a typo would burn every key's
+ * quota to arrive at the same wrong answer three times over.
+ */
+export type GeminiFailureKind = 'exhausted' | 'invalid_key' | 'transient' | 'other';
+
+export function geminiFailureKind(status: number, errText: string): GeminiFailureKind {
+  let error: GeminiErrorBody['error'];
+  try {
+    error = (JSON.parse(errText) as GeminiErrorBody)?.error;
+  } catch {
+    // not JSON, fall through to the status-code-based mapping below
+  }
+  const parsedStatus = error?.status;
+
+  if (status === 429 || parsedStatus === 'RESOURCE_EXHAUSTED') return 'exhausted';
+  if (
+    error?.details?.some((d) => d?.reason === 'API_KEY_INVALID') === true ||
+    /api key not valid/i.test(error?.message ?? '') ||
+    status === 401 ||
+    status === 403 ||
+    parsedStatus === 'PERMISSION_DENIED'
+  ) {
+    return 'invalid_key';
+  }
+  if (status === 503 || parsedStatus === 'UNAVAILABLE' || status >= 500) return 'transient';
+  return 'other';
+}
+
 export function friendlyGeminiError(status: number, errText: string): string {
   let error: GeminiErrorBody['error'];
   try {
@@ -161,7 +195,7 @@ export async function callGemini(
   mimeType: string
 ): Promise<
   | { ok: true; data: RawExtraction; usage: TokenUsage | null }
-  | { ok: false; error: string }
+  | { ok: false; error: string; kind: GeminiFailureKind }
 > {
   let response: Response;
   try {
@@ -177,20 +211,32 @@ export async function callGemini(
     }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      return { ok: false, error: 'The scan timed out. Please try again, or check your connection.' };
+      return {
+        ok: false,
+        kind: 'transient',
+        error: 'The scan timed out. Please try again, or check your connection.',
+      };
     }
-    return { ok: false, error: "Couldn't reach the AI scanner. Please check your connection." };
+    return {
+      ok: false,
+      kind: 'transient',
+      error: "Couldn't reach the AI scanner. Please check your connection.",
+    };
   }
 
   if (!response.ok) {
     const errText = await response.text();
-    return { ok: false, error: friendlyGeminiError(response.status, errText) };
+    return {
+      ok: false,
+      kind: geminiFailureKind(response.status, errText),
+      error: friendlyGeminiError(response.status, errText),
+    };
   }
 
   const data = await response.json();
   const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawText) {
-    return { ok: false, error: 'No response from Gemini' };
+    return { ok: false, kind: 'other', error: 'No response from Gemini' };
   }
 
   const usage: TokenUsage | null = data?.usageMetadata
@@ -204,6 +250,8 @@ export async function callGemini(
     const parsed = JSON.parse(rawText) as RawExtraction;
     return { ok: true, data: parsed, usage };
   } catch {
-    return { ok: false, error: 'Could not parse AI response as JSON' };
+    // Not a quota problem, so this must not fail over. Another key would
+    // return the same unparseable answer.
+    return { ok: false, kind: 'other', error: 'Could not parse AI response as JSON' };
   }
 }

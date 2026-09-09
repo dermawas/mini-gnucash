@@ -14,7 +14,11 @@ import { clearCredentials, clearAccountCache, loadCredentials } from '../../src/
 import {
   isCrashReportingEnabled, setCrashReportingEnabled, loadCrashReportingPreference,
 } from '../../src/services/crashReporting';
-import { getAiKey, saveAiKey, saveAiModel, getAiModel, clearAiKey, maskKey } from '../../src/services/aiKey';
+import { saveAiModel, getAiModel } from '../../src/services/aiKey';
+import {
+  adoptLegacyKey, listAiKeys, addAiKey, renameAiKey, forgetAiKey, labelFor,
+  type AiKeyProfile,
+} from '../../src/services/aiKeys';
 import { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from '../../src/services/receiptExtraction';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
 import {
@@ -42,7 +46,9 @@ export default function Settings() {
   const [crash, setCrash] = useState(isCrashReportingEnabled());
   // The saved key is shown masked and never re-rendered in full. What is being
   // typed lives inside the sheet, so no half-entered secret is held here.
-  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [aiKeys, setAiKeys] = useState<AiKeyProfile[]>([]);
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [keyNameDraft, setKeyNameDraft] = useState('');
   const [editing, setEditing] = useState<'key' | 'model' | null>(null);
   // The model is shown in full -- it is not a secret, and the whole point of
   // exposing it is to be able to read what is in force before changing it.
@@ -79,10 +85,30 @@ export default function Settings() {
       setActiveId(await getActiveId());
     });
     loadCrashReportingPreference().then(() => setCrash(isCrashReportingEnabled()));
-    getAiKey().then(setSavedKey);
+    // Adopt first: a phone that has been scanning since before the key list
+    // existed has its key under the old single entry, and without this the
+    // section would read "no keys" to someone who plainly has one.
+    adoptLegacyKey().then(setAiKeys);
     getAiModel().then(setSavedModel);
     loadMemory().then((m) => setMerchants(Object.keys(m).length));
   }, []);
+
+  function confirmForgetKey(k: AiKeyProfile) {
+    Alert.alert(
+      `Forget ${labelFor(k)}?`,
+      aiKeys.length === 1
+        ? 'This is your only Gemini key. Forgetting it turns receipt scanning off until you add another. Nothing else is affected.'
+        : 'Removes it from this phone. Scans will rotate through the keys that are left.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Forget',
+          style: 'destructive',
+          onPress: async () => { setAiKeys(await forgetAiKey(k.id)); },
+        },
+      ],
+    );
+  }
 
   function confirmForget(i: Instance, active: boolean) {
     Alert.alert(
@@ -268,28 +294,87 @@ export default function Settings() {
 
         <Text style={styles.section}>RECEIPT SCANNING</Text>
         <View style={styles.card}>
+          {aiKeys.map((k) => {
+            if (renamingKey === k.id) {
+              return (
+                <View key={k.id} style={styles.ledgerEditor}>
+                  <Text style={styles.editorLabel}>Name for this key</Text>
+                  <TextField
+                    variant="active"
+                    style={styles.editorInput}
+                    value={keyNameDraft}
+                    onChangeText={setKeyNameDraft}
+                    placeholder={`••••••••${k.tail}`}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                  />
+                  <Text style={styles.hint}>
+                    A label on this phone only. Useful for recording which Google account a key
+                    came from, which is the thing that decides whether it has its own quota.
+                  </Text>
+                  <View style={styles.editorActions}>
+                    <Pressable style={styles.editorGhost} onPress={() => setRenamingKey(null)}>
+                      <Text style={styles.editorGhostText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.editorSave}
+                      onPress={async () => {
+                        setAiKeys(await renameAiKey(k.id, keyNameDraft));
+                        setRenamingKey(null);
+                      }}
+                    >
+                      <Text style={styles.editorSaveText}>Save</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            }
+
+            const flagged = k.exhaustedAt != null;
+            return (
+              <Pressable
+                key={k.id}
+                style={({ pressed }) => [styles.ledgerRow, pressed && styles.rowPressed]}
+                onLongPress={() => confirmForgetKey(k)}
+              >
+                <View style={styles.ledgerText}>
+                  <Text style={[styles.ledgerName, styles.ledgerNameOn]}>{labelFor(k)}</Text>
+                  <Text style={styles.ledgerUrl} numberOfLines={1}>{`••••••••${k.tail}`}</Text>
+                </View>
+                {/* The flag stays up until this key next succeeds, not until a
+                    timer elapses. A cooldown passing proves nothing about
+                    whether the quota came back. */}
+                <Text style={flagged ? styles.keyFlag : styles.keyOk}>
+                  {flagged
+                    ? `Limit hit ${new Date(k.exhaustedAt!).toLocaleTimeString(undefined, {
+                        hour: '2-digit', minute: '2-digit' })}`
+                    : 'Ready'}
+                </Text>
+                <Pressable
+                  style={styles.ledgerPencil}
+                  onPress={() => { setKeyNameDraft(k.name); setRenamingKey(k.id); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rename ${labelFor(k)}`}
+                >
+                  <Icon name="edit" size={14} color={theme.disabled} />
+                </Pressable>
+              </Pressable>
+            );
+          })}
           <SettingRow
-            label="Gemini key"
-            value={savedKey ? maskKey(savedKey) : 'Not set'}
+            label={aiKeys.length === 0 ? 'Gemini key' : 'Add another key'}
+            value={aiKeys.length === 0 ? 'Not set' : `${aiKeys.length} saved`}
             mono
             secure
             open={editing === 'key'}
             onOpen={() => setEditing('key')}
             onCancel={() => setEditing(null)}
-            placeholder={savedKey ? 'Replace the saved key' : 'Paste your Gemini API key'}
+            placeholder="Paste your Gemini API key"
             help="Your own key, billed to your own Google account. It stays in this phone's keystore and is sent only to Google — never to your ledger, and never to us."
             onSave={async (key) => {
-              await saveAiKey(key);
-              setSavedKey(key);
+              setAiKeys(await addAiKey(key));
               setEditing(null);
             }}
-            onRemove={savedKey ? async () => {
-              await clearAiKey();
-              setSavedKey(null);
-              setSavedModel(DEFAULT_GEMINI_MODEL);
-              setEditing(null);
-            } : undefined}
-            removeLabel="Remove key"
           />
           <SettingRow
             label="Model"
@@ -311,9 +396,21 @@ export default function Settings() {
               setEditing(null);
             }}
           />
-          {!savedKey ? (
+          {aiKeys.length === 0 ? (
             <Text style={styles.hintInset}>Scanning is off until you add a key.</Text>
-          ) : null}
+          ) : aiKeys.length === 1 ? (
+            <Text style={styles.hintInset}>
+              Long-press a key to forget it. Add a second and scans will alternate between them,
+              moving on by itself when one hits its limit.
+            </Text>
+          ) : (
+            <Text style={styles.hintInset}>
+              Scans rotate through these {aiKeys.length} keys, and move on by themselves when one
+              hits its limit. A flag clears when that key next works. If they all run out together
+              they are probably one Google project sharing one quota — separate projects, or
+              separate Google accounts, are what actually multiply it.
+            </Text>
+          )}
         </View>
 
         <Text style={styles.section}>PRIVACY</Text>
@@ -449,6 +546,10 @@ const styles = StyleSheet.create({
   ledgerUrl: { color: theme.inkFaint, fontSize: 12, marginTop: 2, fontFamily: fonts.mono },
   ledgerMark: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansSemi },
   ledgerPencil: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  // Coral is this app's "look at this", used for the same job on the Accounts
+  // tab. A tired key is not an error, so it is not styled as one.
+  keyFlag: { color: theme.coral, fontSize: 12, fontFamily: fonts.sansSemi },
+  keyOk: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
   ledgerEditor: {
     backgroundColor: theme.surface,
     paddingHorizontal: 20, paddingTop: 12, paddingBottom: 14,

@@ -28,7 +28,7 @@
 // transaction RPCs do the balancing.
 
 import { allocateAmounts } from './allocate';
-import { callGemini, DEFAULT_GEMINI_MODEL } from './gemini';
+import { callGemini, DEFAULT_GEMINI_MODEL, type GeminiFailureKind } from './gemini';
 import type { AllocatedItem } from './types';
 
 export { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from './gemini';
@@ -54,7 +54,13 @@ export type ReceiptScan = {
 
 export type ExtractReceiptResult =
   | ({ ok: true } & ReceiptScan)
-  | { ok: false; error: string; message: string };
+  /**
+   * `kind` carries why the call failed, so a caller holding several keys can
+   * tell "this key is out of quota" from "this key is wrong". `message` stays
+   * the sentence to show a person. Absent when the failure never reached
+   * Google, as with a missing key.
+   */
+  | { ok: false; error: string; message: string; kind?: GeminiFailureKind };
 
 export async function extractReceipt(params: {
   base64Image: string;
@@ -81,7 +87,7 @@ export async function extractReceipt(params: {
 
   const result = await callGemini(apiKey, model, base64Image, mimeType);
   if (!result.ok) {
-    return { ok: false, error: 'scan_failed', message: result.error };
+    return { ok: false, error: 'scan_failed', message: result.error, kind: result.kind };
   }
 
   const extraction = result.data;

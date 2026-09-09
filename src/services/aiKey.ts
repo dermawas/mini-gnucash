@@ -58,6 +58,18 @@ export async function clearAiKey(): Promise<void> {
   await SecureStore.deleteItemAsync(AI_MODEL);
 }
 
+/**
+ * Remove only the key, leaving the model override alone.
+ *
+ * For `aiKeys.ts`'s migration, which copies this entry into the key list and
+ * then clears it. `clearAiKey` above would take the model with it, silently
+ * resetting a deliberate choice of model as a side effect of a storage change
+ * the user never asked for.
+ */
+export async function clearLegacyAiKeyOnly(): Promise<void> {
+  await SecureStore.deleteItemAsync(AI_API_KEY);
+}
+
 export async function hasAiKey(): Promise<boolean> {
   return !!(await getAiKey());
 }
