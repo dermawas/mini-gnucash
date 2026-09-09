@@ -108,7 +108,8 @@ import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
 import { scanReceipt, type MatchBasis } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { CURRENCIES, parseCurrencyInput, formatAmount } from '../../src/utils/currency';
-import { todayIso } from '../../src/utils/receiptDate';
+import { todayIso, dateConcern, isFutureDate } from '../../src/utils/receiptDate';
+import { useEntryDraft } from '../../src/store/entryDraftStore';
 import { theme, fonts } from '../../src/constants/theme';
 
 type Section = 'items' | 'moneyBack' | 'funders';
@@ -212,6 +213,13 @@ export default function Entry() {
     funders.some((r) => r.raw.trim()) ||
     description.trim().length > 0;
 
+  // Out/In/Move already asks before clearing a half-built entry
+  // (`chooseDirection`, below). Accounts and Settings could not, because nothing
+  // outside this screen knew there was anything to lose -- so mirror `dirty`
+  // into the shared store those tabs read before letting a tap leave here.
+  const setDraftDirty = useEntryDraft((s) => s.setDirty);
+  useEffect(() => { setDraftDirty(dirty); }, [dirty, setDraftDirty]);
+
   // Everything a finished entry leaves behind. The date and the receipt's
   // printed total are in here for a reason: a scanned receipt sets BOTH, and
   // after saving one dated 2024 the next entry silently inherited that date,
@@ -234,6 +242,16 @@ export default function Entry() {
     setPrintedTotal(null);
     setPostDate(todayIso());
   }
+
+  // The other half of the tab guard above: once Accounts or Settings has
+  // asked and the user chose to discard, clear this screen in response.
+  const clearRequest = useEntryDraft((s) => s.clearRequest);
+  const clearRequestSeen = useRef(clearRequest);
+  useEffect(() => {
+    if (clearRequest === clearRequestSeen.current) return;
+    clearRequestSeen.current = clearRequest;
+    reset();
+  }, [clearRequest]);
 
   // A half-built entry must not survive a change of ledger.
   //
@@ -509,8 +527,25 @@ export default function Entry() {
     funders.every((r) => !r.raw.trim() || amt(r) > 0) &&
     // Nothing is derived across a currency boundary, so "rest" is not on offer.
     (!crossCurrency || amt(funders[0]) > 0);
+
+  // A receipt cannot be dated after today -- see `isFutureDate`'s header.
+  // There is no legitimate case on the other side of this one, so unlike the
+  // stale-date warning below it is a hard stop, not a tap-through.
+  const futureDate = isFutureDate(postDate);
+
+  // The one client-side arithmetic check this screen keeps, and it exists
+  // because it very nearly did not: a receipt scan can leave the rows adding
+  // up to something other than what it read as the total, and a mismatch that
+  // only ever printed a coral warning still let the ShopeePay/TOKOO KITA entry
+  // save with its money-back split half finished. Structural incompleteness
+  // (`missing`, below) already disables the button instead of merely warning
+  // beside it; this joins that list rather than staying purely cosmetic.
+  const totalMismatch =
+    printedTotal != null && Math.abs(required - printedTotal) > Math.max(1, printedTotal * 0.02);
+
   const ready =
-    itemsReady && backReady && fundersReady && balanced && !scopeProblem && canWrite && !saving;
+    !futureDate && itemsReady && backReady && fundersReady && balanced && !totalMismatch &&
+    !scopeProblem && canWrite && !saving;
 
   const funderNames = funders.map((r) => (r.accountGuid ? byGuid(r.accountGuid)?.name : null));
   const funderLabel =
@@ -524,13 +559,17 @@ export default function Entry() {
   // repeating an action it will not perform. Order matters: it reports what
   // you would fix FIRST, top of the screen down.
   const missing: string | null =
-    items.some((r) => !r.accountGuid) ? 'Choose an account'
+    // The date sits above every section on screen, so a bad one is fixed
+    // before anything else -- same "top of the screen down" rule as the rest.
+    futureDate ? 'That date is in the future'
+      : items.some((r) => !r.accountGuid) ? 'Choose an account'
       : items.some((r) => amt(r) <= 0) ? 'Enter an amount'
       : moneyBack.some((r) => !r.accountGuid) ? 'Choose the money back account'
       : moneyBack.some((r) => amt(r) <= 0) ? 'Enter the money back amount'
       : funders.some((r) => !r.accountGuid)
         ? (transferMode ? 'Choose where it came from' : inflow ? 'Choose where it arrived' : 'Choose who paid')
       : crossCurrency && amt(funders[0]) <= 0 ? `Enter the amount in ${fromCcy}`
+      : totalMismatch ? 'Check the amount against the receipt'
       : scopeProblem ? 'Cannot be saved from here'
       : !canWrite ? 'Cannot save right now'
       : !balanced ? 'Not balanced yet'
@@ -662,16 +701,43 @@ export default function Entry() {
     if (!res.ok) return null;
 
     const leaves = !inflow;
+    // A move and an ordinary expense or income are different KINDS of entry
+    // even when the amount, date and direction all agree -- your own money
+    // changing pockets is not spending, and matching one against the other is
+    // a false positive the coincidence produces for free. (A Move of 36.000
+    // flagged an unrelated 36.000 grocery run as "the same" purchase for
+    // exactly this reason.) So a candidate only counts if its own shape
+    // agrees: at least one of ITS other splits is an asset account exactly
+    // when this entry's other side is one too.
+    const transferish = (r: RegisterRow) =>
+      r.other_splits.some((o) => {
+        const acct = byGuid(o.guid);
+        return !!acct && TRANSFERABLE.includes(acct.account_type);
+      });
+
     return res.data.rows.find((r) =>
       r.post_date.slice(0, 10) === postDate &&
       (r.quantity < 0) === leaves &&
-      Math.abs(Math.abs(r.quantity) - amount) < 0.005,
+      Math.abs(Math.abs(r.quantity) - amount) < 0.005 &&
+      transferish(r) === transferMode,
     ) ?? null;
   }
 
   async function commit() {
     if (!ready) return;
     setSaving(true);
+
+    // `ready` already refused a future date outright. What is left here is
+    // only the past-threshold case, which stays a tap-through: a genuinely
+    // old receipt (Holland Bakery, 38 days) is a real thing this app has to
+    // let you record, and it is a misread year -- not a late receipt -- that
+    // this is actually guarding against.
+    const dateWarning = dateConcern(postDate);
+    if (dateWarning) {
+      const go = await ask('Check the date', dateWarning, 'Save anyway');
+      if (!go) { setSaving(false); return; }
+    }
+
     setCheckingDup(true);
     const dup = await findDuplicate();
     setCheckingDup(false);
@@ -1140,10 +1206,10 @@ ${extras.join(' · ')}` : head;
           </View>
         ) : null}
 
-        {printedTotal != null && Math.abs(required - printedTotal) > Math.max(1, printedTotal * 0.02) ? (
+        {totalMismatch ? (
           <Text style={styles.warn}>
             These rows come to {formatAmount(required, currency)}, but the receipt says{' '}
-            {formatAmount(printedTotal, currency)}. Check the amounts before saving.
+            {formatAmount(printedTotal!, currency)}. Check the amounts before saving.
           </Text>
         ) : null}
         {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}

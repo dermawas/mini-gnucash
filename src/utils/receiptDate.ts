@@ -33,6 +33,13 @@ export function postDate(receiptDate: string): { date: string; fellBack: boolean
  */
 export const DATE_WARN_DAYS = 30;
 
+/** A receipt cannot be for a purchase that has not happened yet. */
+export function isFutureDate(v: string): boolean {
+  // Zero-padded YYYY-MM-DD strings sort the same lexicographically as
+  // chronologically, so a plain compare is exact and needs no Date object.
+  return isValidIsoDate(v) && v > todayIso();
+}
+
 export function isValidIsoDate(v: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   const d = new Date(`${v}T00:00:00`);

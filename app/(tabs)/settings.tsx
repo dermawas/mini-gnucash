@@ -27,8 +27,10 @@ import { SettingRow } from '../../src/components/SettingRow';
 import { usePrivacy } from '../../src/store/privacyStore';
 import Constants from 'expo-constants';
 import { theme, fonts } from '../../src/constants/theme';
+import { useEntryTabGuard } from '../../src/hooks/useEntryTabGuard';
 
 export default function Settings() {
+  useEntryTabGuard('settings');
   const router = useRouter();
   const conn = useConnection();
   const loadAccounts = useAccounts((s) => s.load);

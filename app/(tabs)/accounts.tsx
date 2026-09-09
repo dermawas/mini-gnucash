@@ -47,8 +47,10 @@ import { formatAmount } from '../../src/utils/currency';
 import { theme, fonts } from '../../src/constants/theme';
 import { usePrivacy, maskIfHidden } from '../../src/store/privacyStore';
 import type { Account } from '../../src/services/api';
+import { useEntryTabGuard } from '../../src/hooks/useEntryTabGuard';
 
 export default function Accounts() {
+  useEntryTabGuard('accounts');
   const router = useRouter();
   const accounts = useAccounts((s) => s.accounts);
   const loadAccounts = useAccounts((s) => s.load);
