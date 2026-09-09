@@ -13,6 +13,9 @@ android/
 ios/
 *.log
 
+# Claude Code, machine-local
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db

@@ -189,6 +189,17 @@ export default function Accounts() {
           <Text style={styles.h1} numberOfLines={1}>
             {current ? current.name : 'Accounts'}
           </Text>
+          {/* Reaches the one view in this app sorted by when you ENTERED
+              something rather than when it is dated. See `app/recent.tsx`. */}
+          <Pressable
+            onPress={() => router.push('/recent')}
+            hitSlop={12}
+            style={styles.headAction}
+            accessibilityRole="button"
+            accessibilityLabel="Recently added"
+          >
+            <Icon name="receipt" size={22} color={theme.inkSoft} />
+          </Pressable>
           <Pressable
             onPress={toggleHidden}
             hitSlop={12}
@@ -319,6 +330,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12 },
   headTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headAction: { marginRight: 16 },
   h1: {
     color: theme.ink, fontSize: 20, fontFamily: fonts.sansMedium, flex: 1, marginRight: 12,
   },

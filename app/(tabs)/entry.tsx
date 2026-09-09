@@ -179,6 +179,17 @@ export default function Entry() {
   // What the receipt said it came to, kept only to warn when the lines and the
   // printed total disagree. It is not written anywhere.
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
+  // The total the SCAN ITSELF proposed: its line amounts, less any discount it
+  // found. It exists only as a fallback baseline for the mismatch guard below,
+  // because `printedTotal` is null whenever the model could not read a total
+  // off the paper -- and on those receipts the guard was silently inactive.
+  //
+  // The case that motivated it: a Gocar receipt scans as two 5,500 lines
+  // funded by 11,000. Delete the platform fee and, with the funder left as
+  // "rest", the entry quietly becomes 5,500 and saves. It does not imbalance
+  // the book -- `mgc_record_entry` derives the funder from what is there -- but
+  // it records half of what was spent, which is a quieter kind of wrong.
+  const [scannedTotal, setScannedTotal] = useState<number | null>(null);
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
 
@@ -240,6 +251,7 @@ export default function Entry() {
     setFunders([newRow(keepFunder ? funders[0]?.accountGuid ?? null : null)]);
     setDescription('');
     setPrintedTotal(null);
+    setScannedTotal(null);
     setPostDate(todayIso());
   }
 
@@ -540,8 +552,13 @@ export default function Entry() {
   // save with its money-back split half finished. Structural incompleteness
   // (`missing`, below) already disables the button instead of merely warning
   // beside it; this joins that list rather than staying purely cosmetic.
+  // The receipt's own total when there is one, otherwise what the scan
+  // proposed. Either way it is a figure this device did not invent, which is
+  // what makes it worth checking `required` against.
+  const totalBaseline = printedTotal ?? scannedTotal;
   const totalMismatch =
-    printedTotal != null && Math.abs(required - printedTotal) > Math.max(1, printedTotal * 0.02);
+    totalBaseline != null &&
+    Math.abs(required - totalBaseline) > Math.max(1, totalBaseline * 0.02);
 
   const ready =
     !futureDate && itemsReady && backReady && fundersReady && balanced && !totalMismatch &&
@@ -655,6 +672,8 @@ export default function Entry() {
     if (out.date) setPostDate(out.date);
     if (out.merchant) setDescription(out.merchant);
     setPrintedTotal(out.printedTotal);
+    const lineSum = out.lines.reduce((t, l) => t + (Number(l.amount) || 0), 0);
+    setScannedTotal(lineSum > 0 ? lineSum - Math.max(out.discount, 0) : null);
   }
 
   /**
@@ -1208,8 +1227,9 @@ ${extras.join(' · ')}` : head;
 
         {totalMismatch ? (
           <Text style={styles.warn}>
-            These rows come to {formatAmount(required, currency)}, but the receipt says{' '}
-            {formatAmount(printedTotal!, currency)}. Check the amounts before saving.
+            These rows come to {formatAmount(required, currency)}, but{' '}
+            {printedTotal != null ? 'the receipt says' : 'the scan read'}{' '}
+            {formatAmount(totalBaseline!, currency)}. Check the amounts before saving.
           </Text>
         ) : null}
         {scopeProblem ? <Text style={styles.warn}>{scopeProblem}</Text> : null}

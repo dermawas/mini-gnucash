@@ -333,6 +333,56 @@ export function getRegister(accountGuid: string, days = 90, limit = 200) {
   });
 }
 
+export type RecentSplit = {
+  account_guid: string;
+  account_name: string;
+  account_type: string;
+  memo: string;
+  /** In the ACCOUNT's own commodity. */
+  quantity: number;
+  commodity: string | null;
+};
+
+export type RecentEntry = {
+  tx_guid: string;
+  /** When it was KEYED IN, not the date it carries. ISO, UTC. */
+  enter_date: string;
+  post_date: string;
+  num: string;
+  description: string;
+  currency: string | null;
+  /** The size of the entry: the sum of its positive values, in `currency`. */
+  amount: number;
+  split_count: number;
+  /** Written by this app rather than by GnuCash desktop or an import. */
+  from_phone: boolean;
+  splits: RecentSplit[];
+};
+
+export type RecentEntries = {
+  window_hours: number;
+  from_utc: string;
+  row_count: number;
+  total_in_window: number;
+  truncated: boolean;
+  rows: RecentEntry[];
+};
+
+/**
+ * What was ENTERED lately, across the whole book.
+ *
+ * The one read here that does not sort on `post_date`. It answers "did that
+ * save, and did it save what I meant" -- an entry keyed in today for a receipt
+ * dated two years ago belongs at the top of this list and nowhere near a
+ * register. See `sql/36_recent_entries.sql` for why that distinction matters.
+ */
+export function getRecentEntries(hours = 24, limit = 50) {
+  return callRpc<RecentEntries>('mgc_recent_entries', {
+    p_hours: hours,
+    p_limit: limit,
+  });
+}
+
 export type TransferResult = {
   status: 'recorded' | 'already_recorded';
   tx_guid: string;
