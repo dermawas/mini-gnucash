@@ -997,16 +997,27 @@ ${extras.join(' · ')}` : head;
         <View style={styles.row}>
           <View style={styles.rowMain}>
             <Pressable onPress={() => setPicker({ section, key: r.key })}>
-              <Text
-                style={[
-                  styles.rowName,
-                  colour ? { color: colour } : null,
-                  !a ? styles.rowNameEmpty : null,
-                ]}
-                numberOfLines={1}
-              >
-                {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
-              </Text>
+              {/* The dashed box goes on a View, not on the Text. React Native
+                  draws `borderStyle` on a View dependably and on a Text only
+                  sometimes -- a Text that comes out with a SOLID border reads
+                  as a finished control, which is the opposite of the point.
+
+                  The View is inside the Pressable rather than being it, so the
+                  box hugs the words while the tap target still spans the row.
+                  Putting the border on the Pressable would have done both at
+                  once and cost most of the target to do it. */}
+              <View style={!a ? styles.rowNameEmptyBox : null}>
+                <Text
+                  style={[
+                    styles.rowName,
+                    colour ? { color: colour } : null,
+                    !a ? styles.rowNameEmpty : null,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {colour ? '↩ ' : ''}{a ? a.name : 'Choose an account'}
+                </Text>
+              </View>
             </Pressable>
             {/* The line under the account is an editable MEMO, not a label.
                 It was read-only, so a four-line entry could only be described
@@ -1016,18 +1027,23 @@ ${extras.join(' · ')}` : head;
                 Nanking"), which is what makes a line recognisable against the
                 paper; typed by hand it does the same job.
 
-                The placeholder is the account's full path, so a row left alone
-                still shows where it is going, exactly as before. */}
-            {a ? (
-              <TextInput
-                style={styles.rowMemo}
-                value={r.memo}
-                onChangeText={(memo) => patch(section, r.key, { memo })}
-                placeholder="Note for this line"
-                placeholderTextColor={theme.disabled}
-                numberOfLines={1}
-              />
-            ) : null}
+                It is drawn on EVERY row, including one with no account yet.
+                It used to be gated on `a`, which hid the receipt's own wording
+                on exactly the rows that still needed a decision: a scan of a
+                two-item receipt showed one matched line by name and the other
+                as a bare 15.500, and a bare number is not something you can
+                choose an account from without going back to the paper. The
+                name was never lost -- it was in the draft the whole time, and
+                would have been written as the split memo -- it just never
+                reached the screen. */}
+            <TextInput
+              style={styles.rowMemo}
+              value={r.memo}
+              onChangeText={(memo) => patch(section, r.key, { memo })}
+              placeholder="Note for this line"
+              placeholderTextColor={theme.disabled}
+              numberOfLines={1}
+            />
           </View>
           <View>
           <View style={styles.amountWrap}>
@@ -1386,6 +1402,26 @@ const styles = StyleSheet.create({
   // you scroll past -- and the commit button only ever names the FIRST thing
   // missing, so the others stay invisible until you fix that one.
   rowNameEmpty: { color: theme.disabled, fontFamily: fonts.sans },
+  // The colour change alone was not enough. Faint text on the paper ground has
+  // no edge and no ground of its own, so it read as a label rather than as
+  // something waiting for a tap -- next to the DESCRIPTION field, which has a
+  // surface and a border, the account "field" was bare words.
+  //
+  // Dashed rather than filled because the palette already reserves it:
+  // `disabled` is documented as "chevrons, dashed borders, anything present
+  // but not yet actionable", and nothing in the app had ever drawn one.
+  //
+  // alignSelf keeps the box around the FIELD. Without it the border takes the
+  // full width of rowMain and reads as a box around the whole row.
+  //
+  // paddingVertical is 3, not 4, on purpose: 16px of text plus 6 of padding
+  // plus 2 of border is 24, and 24 above a 20px memo is exactly the 44 that
+  // rowMain already reserves. At 4 every account-less row grows by 2px.
+  rowNameEmptyBox: {
+    alignSelf: 'flex-start',
+    borderWidth: 1, borderStyle: 'dashed', borderColor: theme.disabled,
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+  },
   rowPath: { color: theme.inkFaint, fontSize: 11, marginTop: 2, fontFamily: fonts.sans },
   // The account's full path used to be the placeholder here, which made an
   // empty memo read as a static label -- the field looked like data, so nobody

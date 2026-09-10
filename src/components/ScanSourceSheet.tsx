@@ -25,7 +25,9 @@ import type { ScanSource } from '../services/scanReceipt';
 const SOURCES: { source: ScanSource; label: string; note: string }[] = [
   {
     source: 'camera',
-    label: 'Photograph',
+    // `label` is what the user reads; `source` is the discriminator the switch
+    // in scanReceipt keys on. They are allowed to drift, and here they do.
+    label: 'Camera',
     note: 'Point the camera at the paper.',
   },
   {
