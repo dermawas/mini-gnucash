@@ -11,9 +11,29 @@
 // broken on-device -- covered fields, screen jumping, or oscillation.
 //
 // What works instead: an absolutely-positioned overlay View, with the sheet
-// inside a plain ScrollView carrying a large paddingBottom. That padding is
-// invisible when the keyboard is closed, and gives the ScrollView real overflow
-// to drag the sheet clear of the keyboard when it is open.
+// inside a plain ScrollView carrying a large paddingBottom while the keyboard
+// is up, which gives the ScrollView real overflow to drag the sheet clear of it.
+//
+// That buffer used to be unconditional, and the claim here was that it is
+// "invisible when the keyboard is closed". It is not. contentContainerStyle has
+// justifyContent 'flex-end', so a permanent paddingBottom does not sit under the
+// sheet as slack -- it holds the sheet 300dp OFF the bottom, permanently. A
+// short sheet merely floats. A tall one is pushed far enough up that its top
+// crosses the status bar, which is what ScanSourceSheet did on the S10: three
+// sources and a blurb made it ~390dp tall and "Scan a receipt" was drawn behind
+// the clock. Seen 2026-09-10, the first build that ever put that sheet on the
+// phone.
+//
+// So the buffer is now applied only while a keyboard is actually up. The window
+// is `adjustResize` (see AndroidManifest), so it already shrinks under the
+// keyboard on its own; the padding is drag room on top of that, not the
+// mechanism. Keyboard.addListener is NOT KeyboardAvoidingView and is not what
+// was found broken above.
+//
+// paddingTop is the other half, and it is the guard rather than the fix: the
+// overlay is absolutely positioned and so escapes the screens' SafeAreaView, and
+// the app draws edge-to-edge. Without an inset here any sheet tall enough to
+// fill the screen slides under the status bar again.
 //
 // Two further rules learned on-device, both encoded here:
 //   * no maxHeight on the sheet -- a plain View does not scroll its own
@@ -23,8 +43,9 @@
 //     A nested horizontal GestureScrollView rendered completely empty on some
 //     devices and the root cause was never isolated.
 
-import React, { useEffect, useRef } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, ScrollView, Pressable, StyleSheet, Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
 
 type Props = {
@@ -45,12 +66,26 @@ export function OverlayModal({ visible, onDismiss, children }: Props) {
   const openedAt = useRef(0);
   useEffect(() => { if (visible) openedAt.current = Date.now(); }, [visible]);
 
+  const insets = useSafeAreaInsets();
+
+  // Only while a keyboard is actually up; see the header for why this is not
+  // unconditional any more.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const shown = Keyboard.addListener('keyboardDidShow', () => setKeyboardUp(true));
+    const hidden = Keyboard.addListener('keyboardDidHide', () => setKeyboardUp(false));
+    return () => { shown.remove(); hidden.remove(); };
+  }, []);
+
   if (!visible) return null;
   return (
     <View style={styles.overlay}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + 12, paddingBottom: keyboardUp ? 300 : 0 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Tapping the dimmed area dismisses; the sheet itself must not. */}
@@ -72,11 +107,11 @@ const styles = StyleSheet.create({
     zIndex: 1000,
     elevation: 1000,
   },
+  // paddingTop and paddingBottom are both applied inline, from the safe-area
+  // inset and the keyboard state. Do not put a static paddingBottom back here.
   scroll: {
     flexGrow: 1,
     justifyContent: 'flex-end',
-    // The manual keyboard buffer. Do not remove; see the header.
-    paddingBottom: 300,
   },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   sheet: {
