@@ -27,10 +27,25 @@
 // paragraph would leave the enum with a value the model was never told how to
 // choose.
 //
+// Changed 2026-09-10, when the scanner learned to take a PDF or a file as well
+// as a photograph. Two edits, both minimal and both about the SOURCE rather
+// than about extraction:
+//   1. The opening line no longer says "image". It was the only sentence that
+//      told the model to expect a photograph, and a PDF invoice arriving under
+//      that instruction is being described wrongly before it is read.
+//   2. A paragraph on statements. A PDF is the first source that can easily be
+//      a card statement or a transaction history, which is MANY receipts, and
+//      the schema has room for one. An empty `items` array is how the model
+//      says so; `scanReceipt` turns that into a refusal rather than an entry
+//      with a bank's name on it and no rows.
+// Nothing about prices, tax, modifiers or quantity lines was touched.
+//
 // Keep this file import-free (pure strings and plain objects) so it stays
 // portable and trivially testable.
 
-export const EXTRACTION_PROMPT = `Extract structured data from this receipt image.
+export const EXTRACTION_PROMPT = `Extract structured data from this receipt. It may be a photograph of a printed receipt, a screenshot of a digital one, or a PDF invoice or e-receipt. If a PDF runs to more than one page but describes ONE purchase (an invoice with its terms, or a long itemised till roll), read every page as a single receipt.
+
+This document must describe ONE purchase. If it is instead an account statement, a card statement, a transaction history, a monthly summary, or any list of several separate transactions, then return items as an empty array and printed_total as 0, and set receipt_type to "purchase". Do NOT merge several transactions into one receipt, and do NOT choose one of them to report on its own.
 
 FIRST, decide receipt_type. Set it to "topup" ONLY for an e-wallet or bank topup/transfer confirmation — e.g. an ATM or mobile/internet banking screen confirming "Top Up GoPay", "Isi Ulang OVO", "Top Up DANA", "Top Up ShopeePay/LinkAja", or a bank transfer INTO one of those e-wallets — where money is being moved from the user's own bank account into their own e-wallet, not spent on goods or services from a merchant. These often look like a banking app screenshot or an ATM receipt rather than a printed shop receipt, typically showing a destination e-wallet name, the amount being topped up, and sometimes a separate admin/service fee line (e.g. "Biaya Admin", "Admin Fee", "Biaya Layanan", "Service Charge"). Set receipt_type to "purchase" for every other receipt (any receipt where the items are goods/services bought from a merchant), which is the overwhelmingly common case — when in doubt, choose "purchase".
 

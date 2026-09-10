@@ -91,6 +91,7 @@ import { useFocusEffect } from 'expo-router';
 import AmountInput from '../../src/components/AmountInput';
 import { TextField } from '../../src/components/TextField';
 import { AccountSheet } from '../../src/components/AccountSheet';
+import { ScanSourceSheet } from '../../src/components/ScanSourceSheet';
 import { Chip } from '../../src/components/Chip';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -105,7 +106,7 @@ import {
   markInFlight, clearInFlight, type Account, type EntrySplit,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
-import { scanReceipt, type MatchBasis } from '../../src/services/scanReceipt';
+import { scanReceipt, type MatchBasis, type ScanSource } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { CURRENCIES, parseCurrencyInput, formatAmount } from '../../src/utils/currency';
 import { todayIso, dateConcern, isFutureDate } from '../../src/utils/receiptDate';
@@ -159,6 +160,7 @@ export default function Entry() {
   const [checkingDup, setCheckingDup] = useState(false);
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanSheet, setScanSheet] = useState(false);
   const seqRef = useRef(0);
   // How much of the screen the keyboard is covering.
   //
@@ -619,7 +621,7 @@ export default function Entry() {
   // an account, adding a money-back row, splitting the payment across two
   // cards -- is the ordinary screen. The standalone review screen could do
   // none of that.
-  async function runScan(source: 'camera' | 'library') {
+  async function runScan(source: ScanSource) {
     // The funding account decides the currency, which decides which expense
     // accounts can be matched at all. It is normally already filled from last
     // time; when it is not, matching against the wrong currency is worse than
@@ -1149,11 +1151,7 @@ ${extras.join(' · ')}` : head;
           <Pressable
             style={[styles.scanPill, (inflow || transferMode || scanning) && styles.scanPillOff]}
             disabled={inflow || transferMode || scanning}
-            onPress={() => Alert.alert('Scan a receipt', undefined, [
-              { text: 'Photograph', onPress: () => void runScan('camera') },
-              { text: 'Choose photo', onPress: () => void runScan('library') },
-              { text: 'Cancel', style: 'cancel' },
-            ])}
+            onPress={() => setScanSheet(true)}
           >
             {scanning
               ? <ActivityIndicator size="small" color={theme.ink} />
@@ -1284,6 +1282,12 @@ ${extras.join(' · ')}` : head;
         </Pressable>
         </View>
       </View>
+
+      <ScanSourceSheet
+        visible={scanSheet}
+        onDismiss={() => setScanSheet(false)}
+        onPick={(source) => { setScanSheet(false); void runScan(source); }}
+      />
 
       <AccountSheet
         visible={picker !== null}

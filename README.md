@@ -21,6 +21,7 @@ account, a category *is* an `EXPENSE` account.
 - Enter expenses and income against real accounts
 - **Cross-currency transfers that cannot go out of balance** (see below)
 - Scan a receipt with your own Gemini key, propose accounts, you confirm
+- Scan a PDF invoice or a saved screenshot, the same way, from a file picker
 - Mark splits cleared
 
 ## What it deliberately will not do
