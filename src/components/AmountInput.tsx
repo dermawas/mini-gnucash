@@ -30,6 +30,14 @@ interface AmountInputProps extends Omit<TextInputProps, 'value' | 'onChangeText'
 // left of it: "5.500" and "55000" disagree on every index but agree that the
 // caret sits after the second digit. So each edit records a digit count and the
 // caret is rebuilt from it against the newly formatted string.
+//
+// Reported again 2026-09-12, because the rebuilt caret was being thrown away:
+// typing 1 1 6 5 1 8 gave 116.185. Android reports the text change first and
+// the caret move second, and that second message carries the caret from BEFORE
+// the digits were regrouped. `onSelectionChange` believed it and overwrote the
+// position this component had just worked out, so every keystroke after a
+// separator appeared landed one place too far left. The echo is now recognised
+// and dropped -- see the note on onSelectionChange below.
 // ---------------------------------------------------------------------------
 
 /** Digits in `text`, ignoring separators and sign. */
@@ -103,6 +111,11 @@ export default function AmountInput({ value, onChangeText, currency = 'IDR', ...
   const shown = useRef(formatted);
   shown.current = formatted;
 
+  // Where the platform left its own caret on the last edit, before the digits
+  // were regrouped. Held so the caret message that follows an edit can be told
+  // apart from the user tapping somewhere.
+  const platformCaret = useRef<number | null>(null);
+
   return (
     <TextInput
       {...rest}
@@ -111,15 +124,33 @@ export default function AmountInput({ value, onChangeText, currency = 'IDR', ...
       selection={selection}
       // Follows the caret when the user moves it by tapping, so the next edit
       // is diffed against the right place.
-      onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+      //
+      // But every edit is also followed by one of these, and it reports the
+      // platform's caret in the text as the platform built it -- "1.1615" --
+      // not in the regrouped text the field is about to show -- "11.615".
+      // Taking it would undo the whole point of this component, so the one
+      // that matches the position the last edit left behind is dropped. A real
+      // tap lands somewhere else and comes through.
+      onSelectionChange={(e) => {
+        const { start, end } = e.nativeEvent.selection;
+        const echo = platformCaret.current;
+        platformCaret.current = null;
+        if (echo !== null && start === echo && end === echo) return;
+        setSelection({ start, end });
+      }}
       onChangeText={(text) => {
         // The caret BEFORE this edit, plus however many characters it added or
         // removed. Exact, because a numeric keypad only ever edits at the
         // caret. `selection` holds the pre-edit position: either the one set
         // after the previous change, or the one the user tapped to.
+        //
+        // Measured from the END of the selection, not the start. They are the
+        // same for a plain caret. They differ when a stretch of digits was
+        // selected and typed over -- select all of "1.165", press 9, and the
+        // new caret is after the 9, not before it.
         const caret =
           selection != null
-            ? Math.max(0, Math.min(selection.start + (text.length - shown.current.length), text.length))
+            ? Math.max(0, Math.min(selection.end + (text.length - shown.current.length), text.length))
             : caretFromDiff(shown.current, text);
         let next = cleanAmountInput(text, currency);
         let digitsLeft = countDigits(text.slice(0, caret));
@@ -135,6 +166,7 @@ export default function AmountInput({ value, onChangeText, currency = 'IDR', ...
         // Rebuilt against the string the field is ABOUT to show, so the caret
         // is already right when the new value arrives back as a prop.
         const pos = caretAfterDigits(formatAmountInput(next, currency), digitsLeft);
+        platformCaret.current = caret;
         setSelection({ start: pos, end: pos });
         onChangeText(next);
       }}
