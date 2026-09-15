@@ -27,6 +27,14 @@
 //     reconcile: the real state is that GnuCash desktop holds the lock, so
 //     writing is refused until it lets go. Same tone, true sentence, and no
 //     action, because there is nothing this app can do about it.
+//
+// WHERE IT GOES: first child inside the screen's safe area, above the back
+// crumb and above the title. Every screen, no exceptions.
+//
+// It used to sit under the header on the two list screens, which put the
+// Retry link in a different place on each one -- lowest of all on Recently
+// added, where the hour chips pushed it down another row. A control you press
+// because something is wrong should not have to be hunted for.
 
 import React, { useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';

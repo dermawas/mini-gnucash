@@ -150,6 +150,8 @@ export default function AccountRegister() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ConnectionBanner />
+
       {/* The whole "< Accounts" chunk is the back target, per the handoff --
           not just the chevron, which was a 26px glyph with 4px of padding. */}
       <Pressable onPress={() => router.back()} style={styles.crumbRow} hitSlop={8}>
@@ -188,8 +190,6 @@ export default function AccountRegister() {
           <Icon name={hidden ? 'hide' : 'show'} size={22} color={theme.inkSoft} />
         </Pressable>
       </View>
-
-      <ConnectionBanner />
 
       {loading ? (
         <ActivityIndicator style={styles.spinner} color={theme.ink} />

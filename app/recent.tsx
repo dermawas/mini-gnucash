@@ -153,6 +153,8 @@ export default function RecentEntriesScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <ConnectionBanner />
+
       <Pressable onPress={() => router.back()} style={styles.crumbRow} hitSlop={8}>
         <Icon name="chevronLeft" size={14} color={theme.inkFaint} />
         <Text style={styles.crumb} numberOfLines={1}>Accounts</Text>
@@ -193,8 +195,6 @@ export default function RecentEntriesScreen() {
           </Pressable>
         ))}
       </View>
-
-      <ConnectionBanner />
 
       {loading ? (
         <ActivityIndicator style={styles.spinner} color={theme.ink} />
