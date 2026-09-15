@@ -565,9 +565,18 @@ export default function Entry() {
     totalBaseline != null &&
     Math.abs(required - totalBaseline) > Math.max(1, totalBaseline * 0.02);
 
+  // The whole entry's description is required.
+  //
+  // It used to fall back to "Expense" / "Income" / "Transfer" when left blank.
+  // That column is the one thing you read down a register in GnuCash desktop,
+  // so a run of identical "Expense" rows is a book you cannot scan -- and this
+  // app cannot edit or delete, so fixing it afterwards is a desktop job. One
+  // line now is cheaper than that.
+  const described = description.trim().length > 0;
+
   const ready =
-    !futureDate && itemsReady && backReady && fundersReady && balanced && !totalMismatch &&
-    !scopeProblem && canWrite && !saving;
+    !futureDate && itemsReady && backReady && fundersReady && described && balanced &&
+    !totalMismatch && !scopeProblem && canWrite && !saving;
 
   const funderNames = funders.map((r) => (r.accountGuid ? byGuid(r.accountGuid)?.name : null));
   const funderLabel =
@@ -591,6 +600,7 @@ export default function Entry() {
       : funders.some((r) => !r.accountGuid)
         ? (transferMode ? 'Choose where it came from' : inflow ? 'Choose where it arrived' : 'Choose who paid')
       : crossCurrency && amt(funders[0]) <= 0 ? `Enter the amount in ${fromCcy}`
+      : !described ? 'Add a description'
       : totalMismatch ? 'Check the amount against the receipt'
       : scopeProblem ? 'Cannot be saved from here'
       : !canWrite ? 'Cannot save right now'
@@ -783,8 +793,9 @@ ${same}
       if (!go) { setSaving(false); return; }
     }
 
-    const label = description.trim()
-      || (transferMode ? 'Transfer' : inflow ? 'Income' : 'Expense');
+    // `described` has already been checked, so this is the user's own words
+    // every time. Nothing generic is ever written to the book.
+    const label = description.trim();
 
     // Two currencies go to `mgc_transfer`, which is the only function that
     // takes two amounts and writes the trading splits GnuCash needs. Its
@@ -798,7 +809,7 @@ ${same}
         toGuid: items[0].accountGuid!,
         toAmount: amt(items[0]),
         postDate,
-        description: description.trim() || label,
+        description: label,
       });
       setSaving(false);
 
