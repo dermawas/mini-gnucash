@@ -7,7 +7,7 @@
 #   sudo systemctl status postgrest
 
 [Unit]
-Description=PostgREST for Ledgerize GnuCash Sync
+Description=PostgREST for mini-gnucash
 After=network.target postgresql.service
 
 [Service]

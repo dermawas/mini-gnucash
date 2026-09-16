@@ -1,15 +1,15 @@
-# PostgREST config template for Ledgerize's GnuCash Sync.
+# PostgREST config template for mini-gnucash.
 #
 # Copy this to /etc/postgrest/postgrest.conf (or wherever you keep it) and
-# fill in the placeholders. See docs/GNUCASH_SETUP_GUIDE.md for the full
-# walkthrough.
+# fill in the placeholders. See README.md, step 5, for the walkthrough this
+# belongs to.
 
-# Connection string for the `authenticator` role created by
-# sql/self_hosting_setup.sql. This is the ONLY role PostgREST itself
+# Connection string for the `authenticator_mgc` role created by
+# sql/10_roles_and_grants.sql. This is the ONLY role PostgREST itself
 # connects as — it then impersonates whichever role a request's JWT
-# names in its `role` claim (gnucash_app_user, per that same script).
+# names in its `role` claim (gnucash_mgc_user, per that same file).
 # The password must be percent-encoded if it contains special characters.
-db-uri = "postgres://authenticator:CHANGE_ME_authenticator_password@localhost:5432/CHANGE_ME_your_gnucash_database"
+db-uri = "postgres://authenticator_mgc:CHANGE_ME_authenticator_password@localhost:5432/CHANGE_ME_your_gnucash_database"
 
 # GnuCash's tables all live in the public schema.
 db-schema = "public"

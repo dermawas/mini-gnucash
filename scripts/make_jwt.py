@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Generates a single long-lived HS256 JWT for PostgREST, with a `role`
-claim naming the Postgres role to impersonate (see sql/self_hosting_setup.sql
-and docs/GNUCASH_SETUP_GUIDE.md).
+claim naming the Postgres role to impersonate (see sql/10_roles_and_grants.sql
+and README.md).
 
 No third-party dependencies (no PyJWT) — uses only the Python 3 standard
 library, since a fresh server often won't have pip/PyJWT installed and
@@ -13,11 +13,11 @@ Usage:
 
     <jwt-secret>  Must exactly match the `jwt-secret` value in your
                   postgrest.conf (e.g. generated via `openssl rand -base64 32`).
-    [role]        Postgres role to impersonate. Defaults to gnucash_app_user
-                  (the role name sql/self_hosting_setup.sql creates).
+    [role]        Postgres role to impersonate. Defaults to gnucash_mgc_user
+                  (the role name sql/10_roles_and_grants.sql creates).
 
 Example:
-    python3 make_jwt.py "$(openssl rand -base64 32)" gnucash_app_user
+    python3 make_jwt.py "$(openssl rand -base64 32)" gnucash_mgc_user
 
 This JWT has no `exp` claim — it never expires. That's a deliberate
 simplification for this single-user, self-hosted use case (each
@@ -58,6 +58,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     jwt_secret = sys.argv[1]
-    jwt_role = sys.argv[2] if len(sys.argv) > 2 else "gnucash_app_user"
+    jwt_role = sys.argv[2] if len(sys.argv) > 2 else "gnucash_mgc_user"
 
     print(make_jwt(jwt_secret, jwt_role))
