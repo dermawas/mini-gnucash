@@ -3,11 +3,16 @@
 //
 // The chart of accounts, and only the chart of accounts.
 //
-// This is the one thing the app keeps a copy of, because account structure is
-// stable and a picker that cannot open off-VPN is useless. Balances and
-// registers are deliberately NOT held here -- they are fetched live every time
-// and shown as nothing when unreachable. Money changes; the shape of the book
-// does not.
+// Kept in a local copy, because account structure is stable and a picker that
+// cannot open off-VPN is useless. Balances and registers are deliberately NOT
+// held here -- they are fetched live every time and shown as nothing when
+// unreachable. Money changes; the shape of the book does not.
+//
+// This was the ONLY copy of the book on the phone until 2026-09-16, when
+// `wordingMemory.ts` added a second: the descriptions and line notes used in
+// past entries, for completing them as you type. That file argues its own
+// case. All of it is dropped together when the ledger underneath changes --
+// see Settings.
 
 import { create } from 'zustand';
 import { getAccounts, type Account } from '../services/api';

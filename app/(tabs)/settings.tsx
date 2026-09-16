@@ -21,6 +21,7 @@ import {
 } from '../../src/services/aiKeys';
 import { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from '../../src/services/receiptExtraction';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
+import { descriptions, memos, clearWording } from '../../src/services/wordingMemory';
 import {
   listInstances, getActiveId, activate, forgetInstance, renameInstance,
   adoptCurrentCredentials, type Instance,
@@ -58,6 +59,8 @@ export default function Settings() {
   // the names are never shown here, because a merchant list is a spending
   // history and this screen is not where that belongs.
   const [merchants, setMerchants] = useState(0);
+  const [wording, setWording] = useState(0);
+  const [lineNotes, setLineNotes] = useState(0);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -91,6 +94,8 @@ export default function Settings() {
     adoptLegacyKey().then(setAiKeys);
     getAiModel().then(setSavedModel);
     loadMemory().then((m) => setMerchants(Object.keys(m).length));
+    descriptions.load().then((c) => setWording(c.rows.length));
+    memos.load().then((c) => setLineNotes(c.rows.length));
   }, []);
 
   function confirmForgetKey(k: AiKeyProfile) {
@@ -127,6 +132,7 @@ export default function Settings() {
             setActiveId(await getActiveId());
             if (active) {
               await clearAccountCache();
+              await clearWording();
               resetAccounts();
               conn.reset();
               router.replace('/connect');
@@ -149,6 +155,7 @@ export default function Settings() {
           onPress: async () => {
             await clearCredentials();
             await clearAccountCache();
+            await clearWording();
             resetAccounts();
             conn.reset();
             router.replace('/connect');
@@ -247,6 +254,7 @@ export default function Settings() {
                       // open, not to this one. Keeping it would show the wrong
                       // book's accounts against the new connection.
                       await clearAccountCache();
+                      await clearWording();
                       resetAccounts();
                       conn.reset();
                       setActiveId(i.id);
@@ -442,6 +450,30 @@ export default function Settings() {
               }}
             >
               <Text style={styles.btnGhostText}>Forget merchants</Text>
+            </Pressable>
+          ) : null}
+          {/* The chart of accounts used to be the only copy of your book this
+              phone held. The description list is the second, so it is said
+              here rather than left to be found out. */}
+          <Text style={styles.hintInset}>
+            {wording + lineNotes > 0
+              ? `Holding ${wording.toLocaleString()} description${wording === 1 ? '' : 's'} and ${lineNotes.toLocaleString()} line note${lineNotes === 1 ? '' : 's'} copied from your book, so the Entry screen can finish wording you have used before. Taken from every account, not just the one you are entering against. Words and a count only, no amounts and no accounts. Both are dropped whenever you switch or disconnect a ledger.`
+              : 'The wording your book already uses will be copied here the first time the Entry screen reaches the ledger, so it can finish a description or a line note you have typed before. Words and a count only, no amounts and no accounts.'}
+          </Text>
+          {wording + lineNotes > 0 ? (
+            <Pressable
+              style={styles.btnGhostInset}
+              onPress={async () => {
+                await clearWording();
+                setWording(0);
+                setLineNotes(0);
+                Alert.alert(
+                  'Forgotten',
+                  'Descriptions and line notes are typed from scratch until the Entry screen fetches them again.',
+                );
+              }}
+            >
+              <Text style={styles.btnGhostText}>Forget wording</Text>
             </Pressable>
           ) : null}
         </View>

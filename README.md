@@ -72,8 +72,11 @@ sql/10_roles_and_grants.sql  roles, and the owner-side grants
 sql/20_helpers.sql           guid, neutral timestamp, lock check, trading lookup
 sql/30_read_rpcs.sql         ping, chart of accounts
 sql/35_ledger_reads.sql      balances, register
+sql/36_recent_entries.sql    what was keyed in lately, across the book
+sql/37_descriptions.sql      wording used before, for completing a description
+sql/38_memos.sql             notes used before, for completing a line's note
 sql/40_transfer.sql          transfers, including cross-currency
-sql/45_record_transaction.sql  expenses and income
+sql/46_record_entry.sql      one entry: items, money back, who paid
 sql/50_set_split_cleared.sql   the cleared flag
 ```
 

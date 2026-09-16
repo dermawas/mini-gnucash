@@ -383,6 +383,42 @@ export function getRecentEntries(hours = 24, limit = 50) {
   });
 }
 
+export type WordingRow = {
+  /** The book's own spelling, most frequent one wins. Never lower-cased. */
+  text: string;
+  /** How many rows carry it, with capitalisation folded together. */
+  uses: number;
+};
+
+export type WordingList = {
+  row_count: number;
+  /** Different values in the whole book, before any limit. */
+  total: number;
+  truncated: boolean;
+  /** Already ranked, most used first. Keep the order. */
+  rows: WordingRow[];
+};
+
+/**
+ * Every description the book has used, ranked. Across EVERY account -- see
+ * `sql/37_descriptions.sql` for why that is deliberate and must stay.
+ *
+ * Fetched whole and kept on the phone rather than queried per keystroke;
+ * `wordingMemory.ts` says why. Production answers 1,866 rows in 81 ms,
+ * measured 2026-09-16.
+ */
+export function getDescriptions(limit = 5000) {
+  return callRpc<WordingList>('mgc_descriptions', { p_limit: limit });
+}
+
+/**
+ * Every note the book has put on a line, ranked. Same shape, same rules, same
+ * whole-book scope as `getDescriptions`. Production holds 2,324 of them.
+ */
+export function getMemos(limit = 5000) {
+  return callRpc<WordingList>('mgc_memos', { p_limit: limit });
+}
+
 export type TransferResult = {
   status: 'recorded' | 'already_recorded';
   tx_guid: string;

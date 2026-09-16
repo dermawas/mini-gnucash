@@ -106,6 +106,10 @@ import {
   markInFlight, clearInFlight, type Account, type EntrySplit,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
+import {
+  descriptions as descStore, memos as memoStore, isStale, suggest,
+  type Suggestion,
+} from '../../src/services/wordingMemory';
 import { scanReceipt, type MatchBasis, type ScanSource } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
 import { CURRENCIES, parseCurrencyInput, formatAmount } from '../../src/utils/currency';
@@ -151,6 +155,17 @@ export default function Entry() {
   const [direction, setDirection] = useState<'outflow' | 'inflow' | 'transfer'>('outflow');
   const [postDate, setPostDate] = useState<string>(todayIso());
   const [description, setDescription] = useState('');
+  // The wording this book has used before, and which field is live. The
+  // "which" is needed as much as the list: one that stays up after you tap
+  // away sits on top of whatever is underneath for no reason.
+  const [descRows, setDescRows] = useState<Suggestion[]>([]);
+  const [descFocused, setDescFocused] = useState(false);
+  // The same, for a line's note. One list serves every row, and `memoFocus`
+  // names the single row allowed to show it -- rows are rendered from a map,
+  // so a flag per row would have to live in the row itself and survive every
+  // patch() that rewrites it.
+  const [memoRows, setMemoRows] = useState<Suggestion[]>([]);
+  const [memoFocus, setMemoFocus] = useState<{ section: Section; key: string } | null>(null);
   const [items, setItems] = useState<Row[]>([newRow()]);
   const [moneyBack, setMoneyBack] = useState<Row[]>([]);
   const [funders, setFunders] = useState<Row[]>([newRow()]);
@@ -214,7 +229,83 @@ export default function Entry() {
     });
   }, [accountCount, postable]);
 
-  useFocusEffect(useCallback(() => { loadAccounts(); }, [loadAccounts]));
+  // The book's wording. The stored copy is shown at once, so the first entry
+  // after a cold start has suggestions rather than waiting on the network, and
+  // a stale copy is refetched quietly behind it.
+  const syncWording = useCallback(async () => {
+    await Promise.all([
+      (async () => {
+        const cache = await descStore.load();
+        setDescRows(cache.rows);
+        if (!isStale(cache.fetchedAt)) return;
+        // Never surfaced. Off the VPN this simply does not happen, and a phone
+        // that cannot reach the book still has yesterday's list.
+        const fresh = await descStore.refresh();
+        if (fresh) setDescRows(fresh.rows);
+      })(),
+      (async () => {
+        const cache = await memoStore.load();
+        setMemoRows(cache.rows);
+        if (!isStale(cache.fetchedAt)) return;
+        const fresh = await memoStore.refresh();
+        if (fresh) setMemoRows(fresh.rows);
+      })(),
+    ]);
+  }, []);
+
+  // On the account epoch, because that is what switching ledgers bumps. Without
+  // it the previous book's wording would go on being offered against the new
+  // one until something else happened to refresh it.
+  useEffect(() => { void syncWording(); }, [accountsEpoch, syncWording]);
+
+  /**
+   * Teach the note list every line note this entry carried.
+   *
+   * Called after a successful write and BEFORE `reset()` empties the rows, so
+   * it reads the rows as they were saved. Funders are included: a fee or a
+   * card reference noted against the paying account is wording you will want
+   * again just as much as an item name.
+   */
+  async function learnMemos() {
+    const notes = [...items, ...moneyBack, ...funders]
+      .map((r) => r.memo.trim())
+      .filter(Boolean);
+    if (notes.length === 0) return;
+    const next = await memoStore.noteMany(notes);
+    setMemoRows(next.rows);
+  }
+
+  useFocusEffect(useCallback(() => {
+    loadAccounts();
+    // Checked on every visit to the tab, not only on mount. This screen is
+    // mounted once and then lives as long as the app does, so a mount-only
+    // check would make the staleness rule in `wordingMemory.ts` decorative:
+    // a phone left running for two days would never pick up wording added in
+    // GnuCash desktop meanwhile. The read is from storage and the refetch only
+    // happens when the copy is genuinely old.
+    void syncWording();
+  }, [loadAccounts, syncWording]));
+
+  // What to offer under the description field right now.
+  const descSuggestions = useMemo(
+    () => (descFocused ? suggest(descRows, description) : []),
+    [descFocused, description, descRows],
+  );
+
+  // The description is the LAST field on the form, so its list drops into the
+  // space the keyboard has just taken. Scrolling to the end once the keyboard
+  // height is known brings both back above it.
+  //
+  // Driven by `keyboard` rather than fired from onFocus, because at the moment
+  // of focus the keyboard has no height yet and there is nothing to scroll
+  // past. Deliberately not a KeyboardAvoidingView -- see the note on
+  // `keyboard` above.
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (!descFocused || keyboard === 0) return;
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+    return () => clearTimeout(t);
+  }, [descFocused, keyboard, descSuggestions.length]);
 
   // Anything the user has actually put in. The funder is pre-filled from the
   // last entry, so having one is NOT dirt -- only a funder they changed or
@@ -815,6 +906,11 @@ ${same}
 
       if (result.ok) {
         void setLastFunder(funders[0].accountGuid!);
+        // Only a write that reached the book teaches, the rule merchantMemory
+        // holds to. It also means the wording is offerable straight away,
+        // rather than waiting for the next daily refresh to bring it back.
+        void descStore.note(label).then((c) => setDescRows(c.rows));
+        void learnMemos();
         const d = result.data;
         const already = d.status === 'already_recorded';
         // Both sides are stated, because in a cross-currency move neither
@@ -886,6 +982,8 @@ This move may or may not have reached your book. The app will check and tell you
 
     if (result.ok) {
       if (funders[0]?.accountGuid) void setLastFunder(funders[0].accountGuid);
+      void descStore.note(label).then((c) => setDescRows(c.rows));
+      void learnMemos();
       const already = result.data.status === 'already_recorded';
       const summary = writtenSummary();
       // Either way it is IN THE BOOK, so either way the form clears. It used
@@ -998,6 +1096,12 @@ ${extras.join(' · ')}` : head;
       // before it reaches the book. "You chose this here before" and "the words
       // on the receipt looked like this" deserve very different amounts of
       // trust, and the second is the one that has been wrong.
+      // Notes used before, offered only for the row being typed into. Drawn
+      // from the whole book, never just this row's account -- see
+      // `wordingMemory.ts` for why that is deliberate.
+      const memoOpen = memoFocus?.section === section && memoFocus.key === r.key;
+      const memoHints = memoOpen ? suggest(memoRows, r.memo) : [];
+
       const basisNote = !a || !r.proposed ? null
         : r.basis === 'item' ? 'You chose this for this item here before.'
         : r.basis === 'merchant' ? 'You have always chosen this account at this merchant.'
@@ -1054,6 +1158,15 @@ ${extras.join(' · ')}` : head;
               placeholder="Note for this line"
               placeholderTextColor={theme.disabled}
               numberOfLines={1}
+              onFocus={() => setMemoFocus({ section, key: r.key })}
+              // Same 150ms as the description field, for the same reason: blur
+              // lands before the tap does. Cleared only if this row is still
+              // the one showing, so moving between two notes cannot close the
+              // list that the second one just opened.
+              onBlur={() => setTimeout(
+                () => setMemoFocus((f) => (f && f.section === section && f.key === r.key ? null : f)),
+                150,
+              )}
             />
           </View>
           <View>
@@ -1089,6 +1202,30 @@ ${extras.join(' · ')}` : head;
             </Pressable>
           ) : null}
         </View>
+        {memoHints.length > 0 ? (
+          <View style={styles.memoSuggest}>
+            {memoHints.map((h, i) => (
+              <Pressable
+                key={h.text}
+                style={({ pressed }) => [
+                  styles.memoRow,
+                  i > 0 ? styles.descRowDivided : null,
+                  pressed ? styles.descRowPressed : null,
+                ]}
+                onPress={() => {
+                  patch(section, r.key, { memo: h.text });
+                  setMemoFocus(null);
+                  Keyboard.dismiss();
+                }}
+              >
+                <Text style={styles.memoRowText} numberOfLines={1}>{h.text}</Text>
+                <Text style={styles.descRowUses}>
+                  {h.uses === 1 ? 'once' : `${h.uses}×`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {basisNote ? (
           <Text style={[styles.basis, r.basis === 'tokens' && styles.basisWeak]}>{basisNote}</Text>
         ) : null}
@@ -1099,7 +1236,11 @@ ${extras.join(' · ')}` : head;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <ConnectionBanner />
 
         <View style={styles.header}>
@@ -1247,7 +1388,49 @@ ${extras.join(' · ')}` : head;
           placeholder="What the whole entry was, e.g. Lunch"
           value={description}
           onChangeText={setDescription}
+          onFocus={() => setDescFocused(true)}
+          // Blur runs before a tap on the list below lands, so the rows would
+          // unmount from under the finger and the tap would hit nothing. The
+          // delay is what lets the press through; `onPress` clears the flag
+          // itself, so the list never outlives the choice.
+          onBlur={() => setTimeout(() => setDescFocused(false), 150)}
         />
+
+        {/* What this book has called things before, the way GnuCash desktop
+            completes a description out of the register. Matched on the phone
+            against a copy of the book's wording, so it costs no network and
+            appears between two letters. `wordingMemory.ts` has the rules.
+
+            Under the field rather than over it: this sits at the very bottom
+            of the form, so there is nothing below to cover, and a list that
+            drops downward is where a reader's eye already is. */}
+        {descSuggestions.length > 0 ? (
+          <View style={styles.descSuggest}>
+            {descSuggestions.map((s, i) => (
+              <Pressable
+                key={s.text}
+                style={({ pressed }) => [
+                  styles.descRow,
+                  i > 0 ? styles.descRowDivided : null,
+                  pressed ? styles.descRowPressed : null,
+                ]}
+                onPress={() => {
+                  setDescription(s.text);
+                  setDescFocused(false);
+                  Keyboard.dismiss();
+                }}
+              >
+                <Text style={styles.descRowText} numberOfLines={1}>{s.text}</Text>
+                {/* How often you have used it, which is the only reason one row
+                    is above another. Shown rather than implied, so a surprising
+                    order explains itself. */}
+                <Text style={styles.descRowUses}>
+                  {s.uses === 1 ? 'once' : `${s.uses}×`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
 
         {showSubtotal ? (
           <View style={styles.subtotal}>
@@ -1382,6 +1565,41 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   // Spacing only. The field itself is TextField's 'form' variant.
   desc: { marginTop: 12 },
+  // A small card under the field, not welded to it. The field is TextField's
+  // 'form' variant, which is rounded on all four corners -- a flush drawer
+  // would leave the paper showing through two corner arcs at the join. A 4px
+  // gap and the same radius reads as belonging to the field and cannot look
+  // broken.
+  descSuggest: {
+    marginTop: 4,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.hairlineStrong,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  descRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 11, minHeight: 44,
+  },
+  descRowDivided: { borderTopWidth: 1, borderTopColor: theme.hairline },
+  // The note's list is indented and quieter than the description's. It belongs
+  // to one line inside a row, not to the whole entry, and drawing it at the
+  // same weight made the row it sits under look like a second section.
+  memoSuggest: {
+    marginTop: 2, marginBottom: 6, marginLeft: 2, marginRight: 60,
+    backgroundColor: theme.surface,
+    borderWidth: 1, borderColor: theme.hairlineStrong, borderRadius: 8,
+    overflow: 'hidden',
+  },
+  memoRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 11, paddingVertical: 9, minHeight: 40,
+  },
+  memoRowText: { flex: 1, color: theme.inkSoft, fontSize: 14, fontFamily: fonts.sans },
+  descRowPressed: { backgroundColor: theme.pressed },
+  descRowText: { flex: 1, color: theme.ink, fontSize: 15, fontFamily: fonts.sans },
+  descRowUses: { color: theme.inkFaint, fontSize: 12, fontFamily: fonts.mono },
   sectionHead: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 18, paddingBottom: 6,
