@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // The app's icon set, from the 2026-09-08 design handoff: thin line, 24px
 // grid, 1.5px stroke, round caps and joins. Every path below is copied

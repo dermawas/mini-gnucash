@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // Styled to the 2026-09-08 handoff: 72px tall including the safe area, paper
 // ground, a hairline on top, 22px icons over 11pt labels, ink when active and

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // Where the thing being scanned comes from: the camera, the gallery, or a file.
 //

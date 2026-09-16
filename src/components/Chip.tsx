@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // A tappable pill that shows a chosen value and opens the thing that changes
 // it. Entry's header holds two of them side by side -- the date and the

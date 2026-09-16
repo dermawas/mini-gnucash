@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // One entry: money out, money in, and money moved between your own accounts.
 // Board Turn 5 of the 2026-09-08 handoff, plus the Transfer merge.

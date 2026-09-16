@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 
 // Deterministic tax/discount allocation. Lifted VERBATIM from the retired
 // Supabase Edge Function (supabase/functions/scan-receipt/index.ts).

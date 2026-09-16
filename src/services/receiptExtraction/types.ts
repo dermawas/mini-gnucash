@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 
 // Raw shapes the AI returns, before this module's deterministic allocation
 // runs over them. Lifted from Ledgerize, which lifted them in turn from the

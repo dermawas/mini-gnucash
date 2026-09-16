@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 
 // On-device receipt extraction. Lifted from Ledgerize, which replaced a
 // retired `scan-receipt` Supabase Edge Function with this.
@@ -7,8 +7,8 @@
 // ---------------------------------------------------------------------------
 // On the standing "no API key on the client" rule
 // ---------------------------------------------------------------------------
-// No AI API key belonging to Forstra may ever ship to a client. That rule is
-// about *Forstra's* keys and it still holds: one project-owned key on many
+// No AI API key belonging to Flowform Lab may ever ship to a client. That rule
+// is about *our own* keys and it still holds: one project-owned key on many
 // devices is one extraction away from someone else's bill.
 //
 // A key the user obtained themselves, stored on their own device, billed to

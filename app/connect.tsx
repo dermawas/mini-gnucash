@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 
 export const CURRENCIES: Record<string, { symbol: string; name: string; locale: string }> = {
   IDR: { symbol: 'Rp', name: 'Indonesian Rupiah', locale: 'id-ID' },

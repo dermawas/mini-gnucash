@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Forstra Digital
+// Copyright (C) 2026 Flowform Lab
 //
 // Stops a tap on Accounts or Settings from silently walking away from a
 // half-built entry on the Entry tab. Switching Out/In/Move already asks
