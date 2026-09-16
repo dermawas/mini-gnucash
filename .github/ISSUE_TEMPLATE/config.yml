@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup or database problem
+    url: https://github.com/dermawas/mini-gnucash#when-something-does-not-work
+    about: >
+      A 404 on an /rpc/mgc_ call, a sequence grant error, a book lock row, or
+      the app hanging on the splash screen. Read this before you file anything.
+  - name: Something the app will not do
+    url: https://github.com/dermawas/mini-gnucash#what-it-will-not-do
+    about: >
+      Deleting, editing, reconciling and converting currencies for display are
+      left out on purpose. The reason for each one is here.
