@@ -96,9 +96,9 @@ const SCANNABLE_MIME = [
 // Gemini's inline limit is about 20 MB for the WHOLE request, and base64 adds a
 // third on top, so 6 MB of file sits well inside it. The tighter reason is the
 // phone: `base64()` materialises the entire file as one JavaScript string, and
-// the S10 has already had this app killed for memory with the camera open (see
-// docs/HANDOFF.md). For scale, a receipt photographed through ImagePicker at
-// quality 0.7 is a few hundred KB, so nothing normal comes near this.
+// the S10 has already had this app killed for memory with the camera open.
+// For scale, a receipt photographed through ImagePicker at quality 0.7 is a
+// few hundred KB, so nothing normal comes near this.
 const MAX_SCAN_BYTES = 6 * 1024 * 1024;
 
 /** A picked image or document, ready to send, or why there is nothing to send. */

@@ -4,7 +4,7 @@
 -- is ROLLED BACK, so it can be run against the dev clone without leaving
 -- anything behind.
 --
---   sudo -u postgres psql -d gnucash_mgc_dev -f scripts/test-record-entry.sql
+--   sudo -u postgres psql -d gnucash_clone -f scripts/test-record-entry.sql
 --
 -- NOT a migration -- deliberately outside sql/ and unnumbered so it cannot be
 -- applied by mistake alongside the schema files.

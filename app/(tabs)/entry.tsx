@@ -675,11 +675,11 @@ export default function Entry() {
 
   // What the commit button says while it is disabled.
   //
-  // A dead button with no reason is not this project's style -- `TODO.md` says
-  // so about the receipt screen, where Save greyed out with nothing on screen
-  // explaining it. So the button names the one thing still missing instead of
-  // repeating an action it will not perform. Order matters: it reports what
-  // you would fix FIRST, top of the screen down.
+  // A dead button with no reason is not this project's style. The receipt
+  // screen had exactly that problem once: Save greyed out with nothing on
+  // screen explaining it. So the button names the one thing still missing
+  // instead of repeating an action it will not perform. Order matters: it
+  // reports what you would fix FIRST, top of the screen down.
   const missing: string | null =
     // The date sits above every section on screen, so a bad one is fixed
     // before anything else -- same "top of the screen down" rule as the rest.

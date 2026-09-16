@@ -49,7 +49,7 @@
 // motivated this -- `Dining out:Bakery`, `Dining out:Snacks`, `Food Delivery`
 // -- collapse into one account under a coarser chart of accounts, and the item
 // name already reaches the book as the split memo, which is what you would
-// search on. Fix the chart, not the key. See docs/TODO.md.
+// search on. Fix the chart, not the key.
 
 // This is app state, not ledger state. It lives in AsyncStorage beside the
 // account cache, holds no amounts and no credentials, and losing it costs

@@ -14,7 +14,7 @@
 //   parchment  offline / not set up yet   calm, nothing is broken
 //   copper     locked / rejected          needs you
 //
-// TWO DEPARTURES FROM THE HANDOFF'S COPY, both deliberate:
+// TWO DEPARTURES FROM THE WORDING THIS WAS DRAFTED WITH, both deliberate:
 //
 //   * It writes the offline banner as "Offline · 3 changes queued". This app
 //     has no queue. It is a thin client over the book -- a write either
