@@ -1,0 +1,64 @@
+name: Feature request
+description: Ask for something the app does not do yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Read [What it will not do](https://github.com/dermawas/mini-gnucash#what-it-will-not-do) first.**
+        Deleting or editing an existing transaction, reconciling, and converting
+        currencies for display are left out on purpose, not by accident. You can
+        still argue for one of them, but say why the reason given there is wrong.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The task, not the feature. What are you doing when you hit this?
+      placeholder: >
+        I pay a supplier in SGD from an IDR wallet twice a week, and every time I
+        have to open GnuCash on the desktop afterwards to fix the rate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you want the app to do
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it today
+      description: The workaround you use now, if you have one.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part this touches
+      options:
+        - Browsing accounts and balances
+        - Entering an expense or income
+        - Cross currency transfers
+        - Scanning a receipt or an invoice
+        - Marking splits cleared
+        - Setup, the database side, or PostgREST
+        - Something else
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: writes
+    attributes:
+      label: Does this need the app to change an existing transaction?
+      description: >
+        The app only ever adds new transactions and toggles a split between not
+        cleared and cleared. Anything beyond that is a bigger ask and needs a
+        reason.
+      options:
+        - label: No, this only adds new rows or changes what is shown
+        - label: Yes, and I have said above why it has to happen on the phone

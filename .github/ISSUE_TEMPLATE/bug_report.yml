@@ -1,0 +1,114 @@
+name: Bug report
+description: Something in the app or the bridge does not work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things before you start.
+
+        **Do not paste your token, your database password, your PostgREST URL or
+        real account data.** Replace them with `<token>`, `<host>`, `Account A`.
+        This repo is public and an issue cannot be un-read.
+
+        **Read [When something does not work](https://github.com/dermawas/mini-gnucash#when-something-does-not-work) first.**
+        It covers the `404` on `/rpc/mgc_*` calls, the sequence grant error, the
+        book lock row, and the app hanging on the splash screen.
+
+  - type: checkboxes
+    id: checked-readme
+    attributes:
+      label: Before you file this
+      options:
+        - label: I read "When something does not work" and my problem is not one of those
+          required: true
+        - label: There is no token, password, host name or real account data in this report
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw. Copy the error text if there is one.
+      placeholder: I tapped Save on a transfer and the screen showed "request failed".
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Number the steps. Start from a fresh open of the app.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it went wrong
+      description: Your best guess. Pick "not sure" if you do not know.
+      options:
+        - The app on the phone
+        - PostgREST
+        - The mgc_* functions in PostgreSQL
+        - Building the APK
+        - The setup steps in the README
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: The version in app.json, or the one shown on the settings screen.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone and Android version
+      placeholder: Galaxy S10, Android 12
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: PostgreSQL, PostgREST and GnuCash versions
+      placeholder: PostgreSQL 16.2, PostgREST 12.0.2, GnuCash 5.4
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error text or logs
+      description: >
+        PostgREST logs, the PostgreSQL log, or `adb logcat` output. Check it for
+        your token and your account names before you paste it. This box is
+        formatted as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: anything-else
+    attributes:
+      label: Anything else
+      description: Screenshots are welcome. Cover up the amounts and the account names.
+    validations:
+      required: false
