@@ -29,10 +29,10 @@
 
 import { allocateAmounts } from './allocate';
 import { callGemini, DEFAULT_GEMINI_MODEL, type GeminiFailureKind } from './gemini';
-import type { AllocatedItem } from './types';
+import type { AllocatedItem, ScanImage } from './types';
 
 export { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from './gemini';
-export type { RawItem, AllocatedItem, RawExtraction } from './types';
+export type { RawItem, AllocatedItem, RawExtraction, ScanImage } from './types';
 
 export type ReceiptScan = {
   receipt_type: 'purchase' | 'topup';
@@ -63,8 +63,14 @@ export type ExtractReceiptResult =
   | { ok: false; error: string; message: string; kind?: GeminiFailureKind };
 
 export async function extractReceipt(params: {
-  base64Image: string;
-  mimeType: string;
+  /**
+   * The pictures of ONE receipt, in reading order, top of the page first.
+   *
+   * A list rather than a single image because a long receipt does not fit on
+   * a phone screen and the apps showing them rarely offer a PDF export. The
+   * usual case is still one entry long; nothing below treats that specially.
+   */
+  images: ScanImage[];
   apiKey: string;
   model?: string;
   /**
@@ -74,7 +80,7 @@ export async function extractReceipt(params: {
    */
   roundingUnit?: number;
 }): Promise<ExtractReceiptResult> {
-  const { base64Image, mimeType, apiKey, roundingUnit } = params;
+  const { images, apiKey, roundingUnit } = params;
   const model = params.model?.trim() || DEFAULT_GEMINI_MODEL;
 
   if (!apiKey) {
@@ -85,7 +91,18 @@ export async function extractReceipt(params: {
     };
   }
 
-  const result = await callGemini(apiKey, model, base64Image, mimeType);
+  // Caught here rather than at Google, which answers an empty parts list with
+  // a 400, and `friendlyGeminiError` reads a 400 as a bug in this app. The
+  // picker should never produce this; a future caller might.
+  if (images.length === 0) {
+    return {
+      ok: false,
+      error: 'no_image',
+      message: 'There was nothing to scan.',
+    };
+  }
+
+  const result = await callGemini(apiKey, model, images);
   if (!result.ok) {
     return { ok: false, error: 'scan_failed', message: result.error, kind: result.kind };
   }

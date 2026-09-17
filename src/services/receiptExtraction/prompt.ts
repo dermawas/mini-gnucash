@@ -40,10 +40,33 @@
 //      with a bank's name on it and no rows.
 // Nothing about prices, tax, modifiers or quantity lines was touched.
 //
+// Changed 2026-09-17, when the scanner learned to take SEVERAL pictures of one
+// receipt. One edit, the OVERLAP paragraph below, and it is the whole reason
+// the feature needs a prompt change at all.
+//
+// Consecutive phone screenshots of a long receipt are not clean pages. They
+// repeat: the status bar and the app's own header sit at the top of every
+// shot, a fixed button bar at the bottom of every shot, and the scroll
+// position rarely lands so that one shot ends exactly where the next begins.
+// A real example, a Klik Indomaret order screenshotted in three, had its total
+// visible on two of them -- once as "Total Rp128.200" under the basket and
+// again as "Total Pembayaran Rp128.200" in the payment block. Those are the
+// same money. Told nothing, a model can read a repeated line as a second
+// purchase of the same thing, which lands as a duplicate row in the ledger.
+//
+// Nothing about prices, tax, modifiers or quantity lines was touched here
+// either. The arithmetic still happens in allocate.ts.
+//
 // Keep this file import-free (pure strings and plain objects) so it stays
 // portable and trivially testable.
 
 export const EXTRACTION_PROMPT = `Extract structured data from this receipt. It may be a photograph of a printed receipt, a screenshot of a digital one, or a PDF invoice or e-receipt. If a PDF runs to more than one page but describes ONE purchase (an invoice with its terms, or a long itemised till roll), read every page as a single receipt.
+
+SEVERAL PICTURES: you may be given more than one image. When you are, they are pieces of ONE receipt, given in reading order, the top of the receipt first. Read them as a single continuous document, not as separate receipts, and return ONE result covering all of them.
+
+The pieces usually OVERLAP, because they are screenshots taken while scrolling. The same line item, subtotal, discount or total can therefore appear on two consecutive images. Every such repeat is the SAME thing seen twice, never a second one: count it ONCE. In particular, if a total appears under the item list on one image and again in a payment summary on the next, that is one total, not two.
+
+Ignore anything that belongs to the phone or the app rather than to the receipt, and expect it to repeat on every image: the status bar (clock, battery, signal), the app's title or navigation bar, and any fixed button at the bottom of the screen. A row cut in half at the edge of one image is normally whole on the neighbouring one; read it there rather than guessing at it, and never report a price you could only see part of.
 
 This document must describe ONE purchase. If it is instead an account statement, a card statement, a transaction history, a monthly summary, or any list of several separate transactions, then return items as an empty array and printed_total as 0, and set receipt_type to "purchase". Do NOT merge several transactions into one receipt, and do NOT choose one of them to report on its own.
 

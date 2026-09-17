@@ -6,9 +6,20 @@ Notable changes to mini-gnucash. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Scanning takes several pictures of one receipt. A receipt too long for one
+  screenshot can be photographed in pieces and picked together from the
+  gallery, up to six at a time. The pieces usually overlap, so the scanner is
+  told they are one receipt in reading order and that a figure appearing twice
+  is the same money, not a second purchase.
+
 ### Not built yet
 
 - Creating a new account from the phone.
+- A place in an entry for a free item. The scanner reads a gift line at zero,
+  and an entry cannot be saved while a row sits at zero, so the row has to be
+  deleted by hand for now.
 
 ## [0.1.0] - 2026-09-16
 

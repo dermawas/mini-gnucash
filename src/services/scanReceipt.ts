@@ -23,7 +23,7 @@
 
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
-import { extractReceipt } from './receiptExtraction';
+import { extractReceipt, type ScanImage } from './receiptExtraction';
 import { getAiModel } from './aiKey';
 import { adoptLegacyKey, keysForScan, markExhausted, clearExhausted } from './aiKeys';
 import { matchLine } from './accountMatch';
@@ -37,7 +37,9 @@ export type MatchBasis = 'tokens' | 'item' | 'merchant';
 /**
  * Where the thing being scanned comes from.
  *
- * `camera` and `library` go through ImagePicker and are always an image.
+ * `camera` and `library` go through ImagePicker and are always images.
+ * `library` is the only one that can return SEVERAL of them, which is how a
+ * receipt too long for one screenshot gets scanned; see `pickImage`.
  * `document` goes through the system file picker and can be a PDF or an image
  * file -- a screenshot saved outside the gallery, an emailed invoice.
  */
@@ -101,13 +103,52 @@ const SCANNABLE_MIME = [
 // few hundred KB, so nothing normal comes near this.
 const MAX_SCAN_BYTES = 6 * 1024 * 1024;
 
-/** A picked image or document, ready to send, or why there is nothing to send. */
+// The ceiling above is now a ceiling on the WHOLE selection, not on each
+// picture, because that is what both reasons were always about: Gemini's limit
+// applies to the request, and the phone's memory to every base64 string alive
+// at once. Six screenshots at quality 0.7 come to roughly 2 MB together, so
+// this still turns nobody away in normal use.
+//
+// `selectionLimit` is the cheaper guard of the two and the only one that can
+// stop a mistake BEFORE the memory is spent: a tap on "select all" in the
+// gallery would otherwise decode a year of photographs to find out they were
+// too big. Six is above the longest real receipt seen here (a Klik Indomaret
+// order took three) with room to spare.
+const MAX_SCAN_IMAGES = 6;
+
+/** Picked pictures, ready to send, or why there is nothing to send. */
 type PickResult =
-  | { kind: 'picked'; base64: string; mimeType: string; uri: string | null }
+  | {
+      kind: 'picked';
+      images: ScanImage[];
+      /**
+       * The FIRST picture's uri, not all of them. Nothing consumes this today
+       * -- `entry.tsx` ignores it -- and when something does it will want one
+       * thumbnail of the receipt, which is the top of the page.
+       */
+      uri: string | null;
+    }
   | { kind: 'cancelled' }
   | { kind: 'error'; title: string; message: string };
 
-/** The camera or the gallery, through ImagePicker, as it always was. */
+/** Total decoded size of a selection, for the ceiling above. */
+function decodedBytes(images: ScanImage[]): number {
+  // base64 carries 3 bytes in every 4 characters, ignoring the padding, which
+  // is near enough for a limit whose purpose is to catch an order of magnitude.
+  return images.reduce((sum, img) => sum + Math.floor((img.base64.length * 3) / 4), 0);
+}
+
+/**
+ * The camera or the gallery, through ImagePicker.
+ *
+ * The GALLERY takes several, the camera one. That asymmetry is deliberate and
+ * not a gap to be closed later: a long receipt is screenshotted in pieces
+ * before the app is ever opened, so the pieces are already sitting in the
+ * gallery together and get picked in one go. Photographing a paper receipt in
+ * pieces would mean re-opening the camera between shots, which ImagePicker
+ * cannot do in one call anyway, and a paper receipt too long for one frame is
+ * better dealt with by stepping back.
+ */
 async function pickImage(source: 'camera' | 'library'): Promise<PickResult> {
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -123,22 +164,48 @@ async function pickImage(source: 'camera' | 'library'): Promise<PickResult> {
   const picked =
     source === 'camera'
       ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7 })
-      : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7 });
+      : await ImagePicker.launchImageLibraryAsync({
+          base64: true,
+          quality: 0.7,
+          allowsMultipleSelection: true,
+          selectionLimit: MAX_SCAN_IMAGES,
+        });
 
   if (picked.canceled || !picked.assets?.length) return { kind: 'cancelled' };
-  const asset = picked.assets[0];
-  if (!asset.base64) {
+
+  // An asset with no base64 is unreadable, and dropping it silently would send
+  // a receipt with a hole in the middle -- which scans perfectly well and
+  // produces a total nobody can explain. Refuse the whole selection instead.
+  if (picked.assets.some((a) => !a.base64)) {
     return {
       kind: 'error',
       title: 'Could not read that image',
-      message: 'Try again, or pick a different photo.',
+      message:
+        picked.assets.length > 1
+          ? 'One of those pictures could not be read. Try again, or pick a different set.'
+          : 'Try again, or pick a different photo.',
     };
   }
+
+  const images: ScanImage[] = picked.assets.map((a) => ({
+    base64: a.base64 as string,
+    mimeType: a.mimeType ?? 'image/jpeg',
+  }));
+
+  const total = decodedBytes(images);
+  if (total > MAX_SCAN_BYTES) {
+    const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+    return {
+      kind: 'error',
+      title: images.length > 1 ? 'Those pictures are too big to scan' : 'That picture is too big to scan',
+      message: `They come to ${mb(total)} MB and the limit is ${mb(MAX_SCAN_BYTES)} MB. Pick fewer, or just the parts of the receipt with the items and the total on them.`,
+    };
+  }
+
   return {
     kind: 'picked',
-    base64: asset.base64,
-    mimeType: asset.mimeType ?? 'image/jpeg',
-    uri: asset.uri ?? null,
+    images,
+    uri: picked.assets[0].uri ?? null,
   };
 }
 
@@ -222,7 +289,10 @@ async function pickDocument(): Promise<PickResult> {
     };
   }
 
-  return { kind: 'picked', base64, mimeType, uri: file.uri };
+  // One file, even though the shape now carries a list. `pickFileAsync` has no
+  // multiple-selection option, and a PDF does not need one: its own pages are
+  // already read as a single receipt by the prompt.
+  return { kind: 'picked', images: [{ base64, mimeType }], uri: file.uri };
 }
 
 export async function scanReceipt(params: {
@@ -266,8 +336,7 @@ export async function scanReceipt(params: {
 
   for (const key of keys) {
     result = await extractReceipt({
-      base64Image: picked.base64,
-      mimeType: picked.mimeType,
+      images: picked.images,
       apiKey: key.secret,
       model,
       roundingUnit: unit,

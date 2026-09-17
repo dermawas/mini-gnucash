@@ -32,8 +32,11 @@ const SOURCES: { source: ScanSource; label: string; note: string }[] = [
   },
   {
     source: 'library',
-    label: 'Choose photo',
-    note: 'A photo or screenshot already in the gallery.',
+    label: 'Choose photos',
+    // Plural, and the note says so outright. A long receipt screenshotted in
+    // three is the case this row exists for, and nothing else on the screen
+    // would tell anyone the picker takes more than one.
+    note: 'One or more shots already in the gallery. Pick every part of a long receipt, in order.',
   },
   {
     source: 'document',
@@ -53,11 +56,15 @@ export function ScanSourceSheet({
     <OverlayModal visible={visible} onDismiss={onDismiss}>
       <Text style={styles.title}>Scan a receipt</Text>
       {/* Said here rather than discovered at the other end of a 14-second
-          scan: one document becomes one entry. A card statement listing forty
-          transactions has nowhere to go in this screen. */}
+          scan: one receipt becomes one entry. A card statement listing forty
+          transactions has nowhere to go in this screen.
+
+          "One receipt per scan" rather than "one document", now that several
+          pictures can go into a single scan. The limit being stated is on
+          RECEIPTS, and it never moved. */}
       <Text style={styles.blurb}>
-        One receipt or invoice per scan. A statement listing many transactions
-        belongs in GnuCash desktop.
+        One receipt per scan, even when it takes several pictures. A statement
+        listing many transactions belongs in GnuCash desktop.
       </Text>
       {SOURCES.map((s) => (
         <Pressable

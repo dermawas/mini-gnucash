@@ -15,7 +15,7 @@
 //      request would otherwise hang the scan button indefinitely.
 
 import { EXTRACTION_PROMPT, RESPONSE_SCHEMA } from './prompt';
-import type { RawExtraction, TokenUsage } from './types';
+import type { RawExtraction, ScanImage, TokenUsage } from './types';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 
@@ -161,7 +161,12 @@ export function friendlyGeminiError(status: number, errText: string): string {
   return "Couldn't read this receipt. Please try again or enter it manually.";
 }
 
-function fetchGemini(apiKey: string, model: string, base64Image: string, mimeType: string) {
+// The prompt comes FIRST and the pictures follow it in the order they were
+// picked. Both halves of that matter. A model reading the instruction before
+// the pictures knows it is looking at one receipt in pieces rather than at
+// several receipts, and the order is the only thing telling it which piece is
+// the top of the page -- the shots overlap, so content alone is ambiguous.
+function fetchGemini(apiKey: string, model: string, images: ScanImage[]) {
   return fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -175,7 +180,9 @@ function fetchGemini(apiKey: string, model: string, base64Image: string, mimeTyp
           {
             parts: [
               { text: EXTRACTION_PROMPT },
-              { inline_data: { mime_type: mimeType, data: base64Image } },
+              ...images.map((img) => ({
+                inline_data: { mime_type: img.mimeType, data: img.base64 },
+              })),
             ],
           },
         ],
@@ -191,15 +198,14 @@ function fetchGemini(apiKey: string, model: string, base64Image: string, mimeTyp
 export async function callGemini(
   apiKey: string,
   model: string,
-  base64Image: string,
-  mimeType: string
+  images: ScanImage[]
 ): Promise<
   | { ok: true; data: RawExtraction; usage: TokenUsage | null }
   | { ok: false; error: string; kind: GeminiFailureKind }
 > {
   let response: Response;
   try {
-    response = await fetchGemini(apiKey, model, base64Image, mimeType);
+    response = await fetchGemini(apiKey, model, images);
 
     // Gemini's own 503 message says spikes are "usually temporary", and most
     // do clear without the user ever seeing an error. Give up only after the
@@ -207,7 +213,7 @@ export async function callGemini(
     for (const delay of RETRY_DELAYS_MS) {
       if (response.status !== 503) break;
       await new Promise((resolve) => setTimeout(resolve, delay));
-      response = await fetchGemini(apiKey, model, base64Image, mimeType);
+      response = await fetchGemini(apiKey, model, images);
     }
   } catch (err: any) {
     if (err?.name === 'AbortError') {

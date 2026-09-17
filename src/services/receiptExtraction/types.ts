@@ -12,6 +12,24 @@
 // by mistake can be recognised and sent to the right screen rather than
 // silently booked as an expense.
 
+/**
+ * One picture or document on its way to Gemini, already base64 encoded.
+ *
+ * A LIST of these is what gets sent, not one, because a long receipt on a
+ * phone screen does not fit in a single screenshot and the apps that show
+ * them rarely offer a PDF. Several shots of one receipt are pages of one
+ * document, and Gemini reads them that way when they arrive as consecutive
+ * inline parts under a single prompt.
+ *
+ * The mime type travels WITH the bytes rather than being passed once for the
+ * whole list. A gallery selection can genuinely mix them: a PNG screenshot
+ * taken by one app and a JPEG taken by another, in the same receipt.
+ */
+export type ScanImage = {
+  base64: string;
+  mimeType: string;
+};
+
 export type RawItem = {
   name: string;
   // Per-line price, after any per-item discount already printed next to that
