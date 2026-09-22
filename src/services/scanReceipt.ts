@@ -20,19 +20,33 @@
 // between the two is the mime type and where the bytes came from -- the
 // allocation, the account matching and the merchant memory below cannot tell
 // them apart and do not need to.
+//
+// TWO SCANNERS since 2026-09-22. Gemini first, with the user's own keys, as
+// before. When every key is out of quota, or Gemini is busy past its retries,
+// the same pictures and the same instructions go to Claude on the user's own
+// server (receiptExtraction/claude.ts), which allows a small number a day. Only
+// those two failures hand over: a wrong key or a broken request would not be
+// helped by asking someone else, and would spend the day's Claude allowance on
+// a problem that is Gemini's to fix. With no Gemini key at all, Claude reads
+// every scan.
 
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
-import { extractReceipt, type ScanImage } from './receiptExtraction';
+import {
+  buildExtractionPrompt, extractReceipt, GEMINI_TIMEOUT_MESSAGE, GEMINI_UNREACHABLE_MESSAGE,
+  type ClaudeQuota, type ScanEngine, type ScanImage,
+} from './receiptExtraction';
 import { getAiModel } from './aiKey';
 import { adoptLegacyKey, keysForScan, markExhausted, clearExhausted } from './aiKeys';
 import { matchLine } from './accountMatch';
 import { loadMemory, recall } from './merchantMemory';
+import { getClaudeServer, getScanNote } from './scanSettings';
+import { useConnection } from '../store/connectionStore';
 import { roundingUnit } from '../utils/currency';
 import type { Account } from './api';
 
 /** Why an account was proposed, so the screen can say how firm it is. */
-export type MatchBasis = 'tokens' | 'item' | 'merchant';
+export type MatchBasis = 'tokens' | 'model' | 'item' | 'merchant';
 
 /**
  * Where the thing being scanned comes from.
@@ -80,6 +94,17 @@ export type ScanOutcome =
       printedTotal: number;
       computedTotal: number;
       totalMismatch: boolean;
+      /** Which scanner read it. The screen says so when it was Claude. */
+      engine: ScanEngine['kind'];
+      /** The day's Claude allowance after this scan; null for Gemini. */
+      quota: ClaudeQuota | null;
+      /**
+       * Why Claude read it rather than Gemini, in a few words. Null when Gemini
+       * read it, or when there is no Gemini key to hand over from. Shown so a
+       * run of "took too long" can be told apart from a run of "busy", which
+       * are different problems with different fixes.
+       */
+      handover: string | null;
     };
 
 // What Gemini will take as an inline part. A file outside this set is refused
@@ -308,11 +333,12 @@ export async function scanReceipt(params: {
   // Folds a key saved before the key list existed into it. A no-op afterwards.
   await adoptLegacyKey();
   const keys = await keysForScan();
-  if (keys.length === 0) {
+  const claude = await getClaudeServer();
+  if (keys.length === 0 && !claude) {
     return {
       kind: 'error',
-      title: 'No Gemini key',
-      message: 'Receipt scanning uses your own Gemini API key. Add one in Settings.',
+      title: 'No scanner set up',
+      message: 'Receipt scanning uses your own Gemini API key, or Claude on your own server. Add one in Settings.',
     };
   }
 
@@ -321,6 +347,18 @@ export async function scanReceipt(params: {
   const picked = source === 'document' ? await pickDocument() : await pickImage(source);
   if (picked.kind !== 'picked') return picked;
 
+  const model = await getAiModel();
+  const unit = roundingUnit(currency ?? 'IDR', scu);
+
+  // The accounts this entry can actually use, narrowed exactly as matchLine
+  // narrows them, so the scanner is never offered one that would be refused.
+  // Sorted, so the same book always sends the same list.
+  const accountList = candidates
+    .filter((a) => !currency || a.commodity_mnemonic === currency)
+    .map((a) => a.full_path)
+    .sort();
+  const prompt = buildExtractionPrompt(accountList, await getScanNote());
+
   // Walk the keys. `keysForScan` has already put them in round-robin order and
   // moved the cursor on, so this loop only decides when to give up.
   //
@@ -328,17 +366,14 @@ export async function scanReceipt(params: {
   // key, a malformed request, no connection -- would fail identically on all
   // of them, and trying anyway would spend the other keys' quota to arrive at
   // the same answer three times over.
-  const model = await getAiModel();
-  const unit = roundingUnit(currency ?? 'IDR', scu);
-
   let result: Awaited<ReturnType<typeof extractReceipt>> | null = null;
   let exhausted = 0;
 
   for (const key of keys) {
     result = await extractReceipt({
       images: picked.images,
-      apiKey: key.secret,
-      model,
+      engine: { kind: 'gemini', apiKey: key.secret, model },
+      prompt,
       roundingUnit: unit,
     });
 
@@ -357,16 +392,59 @@ export async function scanReceipt(params: {
     break;
   }
 
+  // When every key is out, say that rather than repeating a message written
+  // for one key. "Try again shortly" is misleading advice when the answer is
+  // that all of them are spent.
+  const geminiMessage =
+    exhausted > 0 && exhausted === keys.length
+      ? keys.length === 1
+        ? "Your Gemini key has hit its rate limit or quota. Try again shortly, or add another key in Settings."
+        : `All ${keys.length} of your Gemini keys have hit their limits. Try again shortly. If they ran out together, they may share one Google project's quota.`
+      : (result && !result.ok ? result.message : "Couldn't read that receipt.");
+
+  // Claude, when Gemini could not help for a reason Claude can do something
+  // about. The server sits behind the same VPN as the ledger, so when the app
+  // already knows the ledger is out of reach, asking would only wait out a
+  // timeout to learn the same thing.
+  const geminiBusy =
+    keys.length === 0 ||
+    (!!result && !result.ok && (result.kind === 'exhausted' || result.kind === 'transient'));
+  const geminiFailure = result && !result.ok ? result : null;
+  const handover =
+    keys.length === 0 ? null
+      : exhausted > 0 && exhausted === keys.length ? 'Gemini was out of quota'
+        : geminiFailure?.message === GEMINI_TIMEOUT_MESSAGE ? 'Gemini took too long'
+          : geminiFailure?.message === GEMINI_UNREACHABLE_MESSAGE ? 'Gemini could not be reached'
+            : 'Gemini was busy';
+
+  let claudeTried = false;
+  let claudeSkipped = false;
+  if ((!result || !result.ok) && geminiBusy && claude) {
+    if (['online', 'locked'].includes(useConnection.getState().state)) {
+      claudeTried = true;
+      result = await extractReceipt({
+        images: picked.images,
+        engine: { kind: 'claude', ...claude },
+        prompt,
+        roundingUnit: unit,
+      });
+    } else {
+      claudeSkipped = true;
+    }
+  }
+
   if (!result || !result.ok) {
-    // When every key is out, say that rather than repeating a message written
-    // for one key. "Try again shortly" is misleading advice when the answer is
-    // that all of them are spent.
-    const message =
-      exhausted > 0 && exhausted === keys.length
-        ? keys.length === 1
-          ? "Your Gemini key has hit its rate limit or quota. Try again shortly, or add another key in Settings."
-          : `All ${keys.length} of your Gemini keys have hit their limits. Try again shortly. If they ran out together, they may share one Google project's quota.`
-        : (result?.message ?? "Couldn't read that receipt.");
+    const offServer = 'the app is not connected to your server right now';
+    let message = geminiMessage;
+    if (claudeSkipped) {
+      message = keys.length === 0
+        ? `Claude on your server could not be reached: ${offServer}.`
+        : `${geminiMessage} Claude on your server was not tried, because ${offServer}.`;
+    } else if (claudeTried && result && !result.ok) {
+      message = keys.length === 0
+        ? result.message
+        : `Gemini was busy or out of quota, so Claude on your server was asked. ${result.message}`;
+    }
     return { kind: 'error', title: 'Could not read that receipt', message };
   }
 
@@ -426,5 +504,8 @@ export async function scanReceipt(params: {
     printedTotal: result.printed_total,
     computedTotal: result.computed_total,
     totalMismatch: result.total_mismatch,
+    engine: result.engine,
+    quota: result.quota,
+    handover: result.engine === 'claude' ? handover : null,
   };
 }

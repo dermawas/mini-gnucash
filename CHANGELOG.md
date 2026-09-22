@@ -6,8 +6,30 @@ Notable changes to mini-gnucash. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- A second scanner for when Gemini is busy or out of quota. The same pictures
+  go to Claude Code on your own server, running on your own Claude
+  subscription, reached over your VPN like the ledger. The server allows a
+  small number a day, and the app says when Claude read a receipt and how many
+  are left. Set it up under Settings, Receipt scanning. The service it talks to
+  is a single small endpoint, described at the top of
+  `src/services/receiptExtraction/claude.ts`.
+- Notes for the scanner, in Settings. Rules only you know, such as which rides
+  are for work, sent with every scan.
+
 ### Changed
 
+- The scanner now picks the account for each item itself, from the list of
+  accounts the entry can use. Before, it could only name a loose category,
+  and the app guessed the account from matching words. A pick that does not
+  name a real account, or is in the wrong currency, is ignored and the old
+  matching takes over. Each scan now sends the names of those accounts, never
+  a balance.
+- The Accounts screen loads balances again by itself when the connection
+  comes back. Before, if it first opened while the VPN was still coming up, it
+  kept saying "Could not reach your ledger" under the list until you pulled
+  down to refresh, even though the app was connected.
 - Scanning takes several pictures of one receipt. A receipt too long for one
   screenshot can be photographed in pieces and picked together from the
   gallery, up to six at a time. The pieces usually overlap, so the scanner is

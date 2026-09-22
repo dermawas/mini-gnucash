@@ -176,6 +176,10 @@ export default function Entry() {
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanSheet, setScanSheet] = useState(false);
+  // Said under the items when Claude read the receipt rather than Gemini,
+  // with how much of the day's Claude allowance that left. Gemini says nothing:
+  // it is the normal case, and a line on every scan would stop being read.
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const seqRef = useRef(0);
   // How much of the screen the keyboard is covering.
   //
@@ -345,6 +349,7 @@ export default function Entry() {
     setDescription('');
     setPrintedTotal(null);
     setScannedTotal(null);
+    setScanNote(null);
     setPostDate(todayIso());
   }
 
@@ -736,6 +741,7 @@ export default function Entry() {
     }
 
     setScanning(true);
+    setScanNote(null);
     const out = await scanReceipt({
       source,
       currency,
@@ -778,6 +784,10 @@ export default function Entry() {
     if (out.date) setPostDate(out.date);
     if (out.merchant) setDescription(out.merchant);
     setPrintedTotal(out.printedTotal);
+    setScanNote(out.engine === 'claude'
+      ? `Read by Claude on your server${out.handover ? `: ${out.handover}` : ''}${
+          out.quota ? ` · ${out.quota.used} of ${out.quota.limit} today` : ''}.`
+      : null);
     const lineSum = out.lines.reduce((t, l) => t + (Number(l.amount) || 0), 0);
     setScannedTotal(lineSum > 0 ? lineSum - Math.max(out.discount, 0) : null);
   }
@@ -1105,6 +1115,7 @@ ${extras.join(' · ')}` : head;
       const basisNote = !a || !r.proposed ? null
         : r.basis === 'item' ? 'You chose this for this item here before.'
         : r.basis === 'merchant' ? 'You have always chosen this account at this merchant.'
+        : r.basis === 'model' ? 'The scanner picked this from your accounts. Check it.'
         : 'Suggested from the receipt text — check it.';
 
       return (
@@ -1329,6 +1340,7 @@ ${extras.join(' · ')}` : head;
             </Text>
           </Pressable>
         </View>
+        {scanNote ? <Text style={styles.hint}>{scanNote}</Text> : null}
         {rowsFor('items')}
 
         <View style={styles.links}>

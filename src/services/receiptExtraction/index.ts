@@ -20,6 +20,10 @@
 // project-owned key here later, and do not put ANY key in this repository —
 // it is public from its first commit, and scripts/check-no-secrets.sh exists
 // to make that failure loud.
+//
+// The Claude path, added 2026-09-22, holds no AI key at all. Its token opens a
+// service on the user's own server, which runs Claude Code on the user's own
+// subscription. See ./claude.ts.
 // ---------------------------------------------------------------------------
 //
 // What this returns is a PROPOSAL. Nothing here reaches the ledger without a
@@ -29,10 +33,18 @@
 
 import { allocateAmounts } from './allocate';
 import { callGemini, DEFAULT_GEMINI_MODEL, type GeminiFailureKind } from './gemini';
-import type { AllocatedItem, ScanImage } from './types';
+import { callClaude, type ClaudeFailureKind } from './claude';
+import type { AllocatedItem, ClaudeQuota, RawExtraction, ScanEngine, ScanImage } from './types';
 
-export { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from './gemini';
-export type { RawItem, AllocatedItem, RawExtraction, ScanImage } from './types';
+export {
+  DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS, GEMINI_TIMEOUT_MESSAGE, GEMINI_UNREACHABLE_MESSAGE,
+} from './gemini';
+export { buildExtractionPrompt, MAX_SCAN_NOTE } from './prompt';
+export type { GeminiFailureKind } from './gemini';
+export type { ClaudeFailureKind } from './claude';
+export type {
+  RawItem, AllocatedItem, RawExtraction, ScanImage, ScanEngine, ClaudeQuota,
+} from './types';
 
 export type ReceiptScan = {
   receipt_type: 'purchase' | 'topup';
@@ -50,6 +62,10 @@ export type ReceiptScan = {
   printed_total: number;
   /** Set when allocation and the printed total disagree beyond tolerance. */
   total_mismatch: boolean;
+  /** Which scanner read it. */
+  engine: ScanEngine['kind'];
+  /** The day's Claude allowance after this scan. Null for a Gemini scan. */
+  quota: ClaudeQuota | null;
 };
 
 export type ExtractReceiptResult =
@@ -58,9 +74,9 @@ export type ExtractReceiptResult =
    * `kind` carries why the call failed, so a caller holding several keys can
    * tell "this key is out of quota" from "this key is wrong". `message` stays
    * the sentence to show a person. Absent when the failure never reached
-   * Google, as with a missing key.
+   * the scanner, as with a missing key.
    */
-  | { ok: false; error: string; message: string; kind?: GeminiFailureKind };
+  | { ok: false; error: string; message: string; kind?: GeminiFailureKind | ClaudeFailureKind };
 
 export async function extractReceipt(params: {
   /**
@@ -71,8 +87,10 @@ export async function extractReceipt(params: {
    * usual case is still one entry long; nothing below treats that specially.
    */
   images: ScanImage[];
-  apiKey: string;
-  model?: string;
+  /** Gemini with one of the user's keys, or Claude on the user's own server. */
+  engine: ScanEngine;
+  /** From `buildExtractionPrompt`, so both scanners get the same instructions. */
+  prompt: string;
   /**
    * Denominator allocation rounds to, from `roundingUnit(currency, scu)`.
    * Passing it is what keeps a discount on a two-decimal currency from being
@@ -80,10 +98,9 @@ export async function extractReceipt(params: {
    */
   roundingUnit?: number;
 }): Promise<ExtractReceiptResult> {
-  const { images, apiKey, roundingUnit } = params;
-  const model = params.model?.trim() || DEFAULT_GEMINI_MODEL;
+  const { images, engine, prompt, roundingUnit } = params;
 
-  if (!apiKey) {
+  if (engine.kind === 'gemini' && !engine.apiKey) {
     return {
       ok: false,
       error: 'no_api_key',
@@ -102,12 +119,23 @@ export async function extractReceipt(params: {
     };
   }
 
-  const result = await callGemini(apiKey, model, images);
-  if (!result.ok) {
-    return { ok: false, error: 'scan_failed', message: result.error, kind: result.kind };
+  let extraction: RawExtraction;
+  let quota: ClaudeQuota | null = null;
+  if (engine.kind === 'gemini') {
+    const model = engine.model?.trim() || DEFAULT_GEMINI_MODEL;
+    const result = await callGemini(engine.apiKey, model, prompt, images);
+    if (!result.ok) {
+      return { ok: false, error: 'scan_failed', message: result.error, kind: result.kind };
+    }
+    extraction = result.data;
+  } else {
+    const result = await callClaude(engine, prompt, images);
+    if (!result.ok) {
+      return { ok: false, error: 'scan_failed', message: result.error, kind: result.kind };
+    }
+    extraction = result.data;
+    quota = result.quota;
   }
-
-  const extraction = result.data;
 
   // A topup is a TRANSFER here, not an expense, so there is nothing to
   // allocate and nothing this screen can record. It is still reported rather
@@ -127,6 +155,8 @@ export async function extractReceipt(params: {
       computed_total: 0,
       printed_total: extraction.printed_total ?? 0,
       total_mismatch: false,
+      engine: engine.kind,
+      quota,
     };
   }
 
@@ -215,5 +245,7 @@ export async function extractReceipt(params: {
     computed_total: netTotal,
     printed_total: printedTotal,
     total_mismatch: Math.abs(netTotal - printedTotal) > tolerance,
+    engine: engine.kind,
+    quota,
   };
 }

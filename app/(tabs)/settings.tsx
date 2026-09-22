@@ -19,7 +19,13 @@ import {
   adoptLegacyKey, listAiKeys, addAiKey, renameAiKey, forgetAiKey, labelFor,
   type AiKeyProfile,
 } from '../../src/services/aiKeys';
-import { DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS } from '../../src/services/receiptExtraction';
+import {
+  DEFAULT_GEMINI_MODEL, KNOWN_GEMINI_MODELS, MAX_SCAN_NOTE,
+} from '../../src/services/receiptExtraction';
+import {
+  getClaudeUrl, getClaudeTokenTail, saveClaudeUrl, saveClaudeToken, clearClaudeServer,
+  getClaudeStatus, getScanNote, saveScanNote,
+} from '../../src/services/scanSettings';
 import { loadMemory, forgetAll } from '../../src/services/merchantMemory';
 import { descriptions, memos, clearWording } from '../../src/services/wordingMemory';
 import {
@@ -50,10 +56,21 @@ export default function Settings() {
   const [aiKeys, setAiKeys] = useState<AiKeyProfile[]>([]);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [keyNameDraft, setKeyNameDraft] = useState('');
-  const [editing, setEditing] = useState<'key' | 'model' | null>(null);
+  const [editing, setEditing] = useState<
+    'key' | 'model' | 'claudeUrl' | 'claudeToken' | 'note' | null
+  >(null);
   // The model is shown in full -- it is not a secret, and the whole point of
   // exposing it is to be able to read what is in force before changing it.
   const [savedModel, setSavedModel] = useState<string>(DEFAULT_GEMINI_MODEL);
+  // Claude on the user's own server, for when Gemini is busy. The address is
+  // shown in full; the token only by its last four, like a Gemini key.
+  const [claudeUrl, setClaudeUrl] = useState<string | null>(null);
+  const [claudeTail, setClaudeTail] = useState<string | null>(null);
+  // Today's count, asked of the server. 'unreachable' is normal off the VPN.
+  const [claudeStatus, setClaudeStatus] = useState<
+    { used: number; limit: number } | 'unreachable' | null
+  >(null);
+  const [scanNote, setScanNote] = useState('');
 
   // How many merchants this phone has learned an account for. A count only --
   // the names are never shown here, because a merchant list is a spending
@@ -93,10 +110,21 @@ export default function Settings() {
     // section would read "no keys" to someone who plainly has one.
     adoptLegacyKey().then(setAiKeys);
     getAiModel().then(setSavedModel);
+    getClaudeUrl().then(setClaudeUrl);
+    getClaudeTokenTail().then(setClaudeTail);
+    getScanNote().then(setScanNote);
     loadMemory().then((m) => setMerchants(Object.keys(m).length));
     descriptions.load().then((c) => setWording(c.rows.length));
     memos.load().then((c) => setLineNotes(c.rows.length));
   }, []);
+
+  useEffect(() => {
+    if (!claudeUrl || !claudeTail) { setClaudeStatus(null); return; }
+    let live = true;
+    setClaudeStatus(null);
+    getClaudeStatus(claudeUrl).then((st) => { if (live) setClaudeStatus(st ?? 'unreachable'); });
+    return () => { live = false; };
+  }, [claudeUrl, claudeTail]);
 
   function confirmForgetKey(k: AiKeyProfile) {
     Alert.alert(
@@ -405,7 +433,11 @@ export default function Settings() {
             }}
           />
           {aiKeys.length === 0 ? (
-            <Text style={styles.hintInset}>Scanning is off until you add a key.</Text>
+            <Text style={styles.hintInset}>
+              {claudeUrl && claudeTail
+                ? 'With no Gemini key, Claude on your server reads every scan.'
+                : 'Scanning is off until you add a Gemini key or Claude on your server.'}
+            </Text>
           ) : aiKeys.length === 1 ? (
             <Text style={styles.hintInset}>
               Long-press a key to forget it. Add a second and scans will alternate between them,
@@ -419,6 +451,82 @@ export default function Settings() {
               separate Google accounts, are what actually multiply it.
             </Text>
           )}
+
+          <SettingRow
+            label="Claude server"
+            value={claudeUrl ?? 'Not set'}
+            mono
+            open={editing === 'claudeUrl'}
+            onOpen={() => setEditing('claudeUrl')}
+            onCancel={() => setEditing(null)}
+            initial={claudeUrl ?? ''}
+            placeholder="http://10.8.0.1:3005"
+            help="When Gemini is busy or out of quota, the same pictures go to Claude Code on your own server, on your own Claude subscription. It is reached over your VPN, like your ledger."
+            onRemove={claudeUrl ? async () => {
+              await clearClaudeServer();
+              setClaudeUrl(null);
+              setClaudeTail(null);
+              setEditing(null);
+            } : undefined}
+            removeLabel="Turn off"
+            onSave={async (next) => {
+              await saveClaudeUrl(next);
+              setClaudeUrl(await getClaudeUrl());
+              setEditing(null);
+            }}
+          />
+          <SettingRow
+            label="Claude password"
+            value={claudeTail ? `••••••••${claudeTail}` : 'Not set'}
+            mono
+            secure
+            open={editing === 'claudeToken'}
+            onOpen={() => setEditing('claudeToken')}
+            onCancel={() => setEditing(null)}
+            placeholder="Paste the scan service's token"
+            help="The token of the scan service on your server. It stays in this phone's keystore and is sent only to that server."
+            onSave={async (token) => {
+              await saveClaudeToken(token);
+              setClaudeTail(await getClaudeTokenTail());
+              setEditing(null);
+            }}
+          />
+          {claudeUrl && claudeTail ? (
+            <Text style={styles.hintInset}>
+              {claudeStatus === null
+                ? 'Asking your server…'
+                : claudeStatus === 'unreachable'
+                  ? 'Claude on your server cannot be reached right now. Off the VPN, that is expected.'
+                  : `Claude has read ${claudeStatus.used} of its ${claudeStatus.limit} scans today.`}
+            </Text>
+          ) : null}
+
+          <SettingRow
+            label="Notes for the scanner"
+            value={scanNote ? scanNote.split('\n')[0] : 'None'}
+            open={editing === 'note'}
+            onOpen={() => setEditing('note')}
+            onCancel={() => setEditing(null)}
+            initial={scanNote}
+            multiline
+            placeholder="For example: taxi rides on weekdays are work travel."
+            help={`Rules only you know, sent with every scan to Gemini and to Claude, for choosing an account. Up to ${MAX_SCAN_NOTE} characters.`}
+            onRemove={scanNote ? async () => {
+              await saveScanNote('');
+              setScanNote('');
+              setEditing(null);
+            } : undefined}
+            removeLabel="Clear"
+            onSave={async (note) => {
+              await saveScanNote(note);
+              setScanNote(await getScanNote());
+              setEditing(null);
+            }}
+          />
+          <Text style={styles.hintInset}>
+            A scan sends the pictures, the names of the expense accounts it may choose from, and
+            your notes. Never a balance.
+          </Text>
         </View>
 
         <Text style={styles.section}>PRIVACY</Text>

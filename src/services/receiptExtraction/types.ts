@@ -38,6 +38,10 @@ export type RawItem = {
   // An input to account matching only. Never stored: the ledger records the
   // account the user confirmed, not a phrase a language model produced.
   suggested_category: string;
+  // The account the model picked from the list it was given, as a full path.
+  // Optional because a model can leave it out; accountMatch.ts uses it only if
+  // it names a real candidate, and falls back to the words otherwise.
+  account?: string;
 };
 
 export type RawExtraction = {
@@ -56,3 +60,11 @@ export type AllocatedItem = RawItem & {
 };
 
 export type TokenUsage = { inputTokens: number; outputTokens: number };
+
+/** Which scanner read a receipt, and what it needs to be reached. */
+export type ScanEngine =
+  | { kind: 'gemini'; apiKey: string; model?: string }
+  | { kind: 'claude'; url: string; token: string };
+
+/** How much of the day's Claude allowance is spent, as the server counts it. */
+export type ClaudeQuota = { used: number; limit: number };

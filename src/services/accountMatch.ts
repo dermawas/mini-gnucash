@@ -3,10 +3,19 @@
 //
 // Deterministic matching of a receipt line to a real expense account.
 //
-// Deterministic FIRST, and for now deterministic ONLY. The extraction prompt
-// is hard-won and must not be destabilised by bolting a chart of accounts onto
-// it, and a second text-only AI call is deferred. Everything here is plain
-// token overlap you can reason about, reproduce, and debug offline.
+// Until 2026-09-22 this was deterministic ONLY: the extraction prompt was kept
+// away from the chart of accounts, and everything here was plain token
+// overlap. That had a ceiling. A till receipt prints "SARI ROTI TAWAR", no
+// chart of accounts has those words, so the tokens could only ever reach an
+// account through the model's loose `suggested_category` -- and on one
+// Indomaret receipt all six items came back "Groceries", in a book with
+// fourteen accounts under Groceries.
+//
+// So the scanner is now GIVEN the list of accounts and names one per item
+// (receiptExtraction/prompt.ts, appended after the extraction rules, which were
+// not touched). That pick is checked here, and it is only an input: it must
+// name a real candidate in the right currency or it is ignored, and the token
+// overlap below still answers whenever it is missing or wrong.
 //
 // Three rules this holds to:
 //
@@ -23,7 +32,8 @@
 //      user picks. Proposing a plausible-looking wrong account is worse than
 //      proposing nothing, because it invites a confirming tap.
 //
-//   4. What the user chose before beats anything scored here. The tokens can
+//   4. What the user chose before beats anything scored here, and beats the
+//      scanner's pick too. The tokens can
 //      only reach a leaf via `suggested_category` -- a chart of accounts has
 //      no word for `Donat` -- and that phrase changes between runs on one
 //      receipt. `merchantMemory.ts` supplies the recollection; this file stays
@@ -43,11 +53,12 @@ export type Match = {
    */
   leafCoverage: number;
   /**
-   * Where the proposal came from. `tokens` is the scoring below; `item` and
+   * Where the proposal came from. `tokens` is the scoring below; `model` is the
+   * account the scanner picked from the list it was given; `item` and
    * `merchant` mean it was recalled from what the user chose before, which
-   * outranks any score -- see matchLine.
+   * outranks both -- see matchLine.
    */
-  basis: 'tokens' | 'item' | 'merchant';
+  basis: 'tokens' | 'model' | 'item' | 'merchant';
 };
 
 // Tokens carrying no discriminating power in any book. Path segments shared by
@@ -150,7 +161,7 @@ export function scoreAccount(
  * chose for this merchant is. See merchantMemory.ts.
  */
 export function matchLine(
-  params: { name: string; suggested_category: string },
+  params: { name: string; suggested_category: string; account?: string },
   candidates: Account[],
   fundingCommodity: string | null,
   remembered: Remembered | null = null,
@@ -166,6 +177,18 @@ export function matchLine(
     // proposal is a proposal either way, and the picker is one tap away.
     if (account) {
       return { account, score: Infinity, matched: [], leafCoverage: 1, basis: remembered.basis };
+    }
+  }
+
+  // The scanner's pick, when it names a real candidate. Compared on the full
+  // path, which is what it was shown; trimmed and case-folded because a model
+  // copying 206 lines does not always keep a capital, and two accounts that
+  // differ only in case would be a book problem rather than a scanning one.
+  const picked = params.account?.trim().toLowerCase();
+  if (picked) {
+    const account = eligible.find((a) => a.full_path.toLowerCase() === picked);
+    if (account) {
+      return { account, score: Infinity, matched: [], leafCoverage: 1, basis: 'model' };
     }
   }
 

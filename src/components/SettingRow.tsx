@@ -48,18 +48,31 @@ type Props = {
   /** Shown as a third, destructive action when present. */
   onRemove?: () => void;
   removeLabel?: string;
+  /**
+   * What the editor opens with, for a value worth changing rather than
+   * retyping: an address, a paragraph of notes. NEVER for a secret, which is
+   * the reason the default is to open empty.
+   */
+  initial?: string;
+  /** For a paragraph rather than a value. */
+  multiline?: boolean;
 };
 
 export function SettingRow({
   label, value, open, onOpen, onCancel, onSave,
   mono, secure, placeholder, help, suggestions, current, onRemove, removeLabel,
+  initial, multiline,
 }: Props) {
   const [draft, setDraft] = useState('');
 
   // The draft is scratch, and for the API key it is a secret in flight. It
   // does not outlive one opening of the editor, so reopening never shows what
   // was half-typed the time before.
-  useEffect(() => { if (!open) setDraft(''); }, [open]);
+  //
+  // Opening fills it from `initial` when there is one. Keyed on `open` alone,
+  // so a value refreshed underneath an open editor cannot wipe the typing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setDraft(open ? initial ?? '' : ''); }, [open]);
 
   if (!open) {
     return (
@@ -108,9 +121,10 @@ export function SettingRow({
         value={draft}
         onChangeText={setDraft}
         placeholder={placeholder}
-        autoCapitalize="none"
-        autoCorrect={false}
+        autoCapitalize={multiline ? 'sentences' : 'none'}
+        autoCorrect={!!multiline}
         secureTextEntry={secure}
+        multiline={multiline}
       />
 
       {help ? <Text style={styles.help}>{help}</Text> : null}

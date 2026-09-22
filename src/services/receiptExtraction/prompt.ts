@@ -57,6 +57,16 @@
 // Nothing about prices, tax, modifiers or quantity lines was touched here
 // either. The arithmetic still happens in allocate.ts.
 //
+// Changed 2026-09-22, when the scanner was given the chart of accounts. Until
+// then it could only name a loose category ("Groceries"), and accountMatch.ts
+// had to guess the account from shared words: six items on one Indomaret
+// receipt all came back "Groceries", and the book has fourteen accounts under
+// Groceries. Now `buildExtractionPrompt` adds the list of accounts the entry can
+// use, and the owner's own notes, and every item names one of those accounts.
+// NOTHING ABOVE WAS EDITED. Both additions are appended after the extraction
+// rules, so the hard-won part reads exactly as it did. The same text goes to
+// Gemini and to Claude, so an account never depends on which one answered.
+//
 // Keep this file import-free (pure strings and plain objects) so it stays
 // portable and trivially testable.
 
@@ -132,8 +142,14 @@ export const RESPONSE_SCHEMA = {
             description: 'The TOTAL price for this line (quantity x unit price if the receipt shows a per-unit price), never just the per-unit price.',
           },
           suggested_category: { type: 'string' },
+          // Checked against the real accounts on the phone before it is
+          // offered, so a name the model made up is simply not used.
+          account: {
+            type: 'string',
+            description: 'The one entry from the ACCOUNT LIST this item should be booked to, copied exactly. An empty string if none fits.',
+          },
         },
-        required: ['name', 'price', 'suggested_category'],
+        required: ['name', 'price', 'suggested_category', 'account'],
       },
     },
     receipt_discount: {
@@ -157,3 +173,40 @@ export const RESPONSE_SCHEMA = {
     'printed_total',
   ],
 };
+
+/** Long enough for a paragraph of rules, short enough that it cannot crowd out the receipt. */
+export const MAX_SCAN_NOTE = 1000;
+
+/**
+ * The extraction rules above, then the accounts this entry can use, then the
+ * owner's own notes.
+ *
+ * `accounts` are full paths, `03-Expenses:Groceries:Bread`, already narrowed to
+ * the funding account's currency: offering one the entry could not be saved to
+ * would be offering a dead end. The whole book's expense list is about 7 KB, so
+ * it goes every time rather than being guessed down first.
+ *
+ * The notes are for what no receipt says. A Grab ride in Bandung belongs to a
+ * business, and the same ride in Jakarta does not; only the person keeping the
+ * book knows that, so they get to say it once and have it apply to every scan.
+ */
+export function buildExtractionPrompt(accounts: string[], note: string): string {
+  const list = accounts.length
+    ? accounts.join('\n')
+    : '(none: give an empty string for every account)';
+  let prompt = `${EXTRACTION_PROMPT}
+
+ACCOUNT: for each item, also give \`account\`, the one entry from the ACCOUNT LIST below that this item should be booked to, copied exactly, character for character. If no entry fits well, give an empty string. Never make up an account that is not in the list. Still give suggested_category as well.
+
+ACCOUNT LIST:
+${list}`;
+
+  const trimmed = note.trim().slice(0, MAX_SCAN_NOTE);
+  if (trimmed) {
+    prompt += `
+
+NOTES FROM THE PERSON WHO KEEPS THIS BOOK. They know things a receipt does not show, such as what a purchase was for. Follow them when choosing an account:
+${trimmed}`;
+  }
+  return prompt;
+}

@@ -30,7 +30,7 @@
 //      presented as current is the exact failure this project exists to avoid.
 //      The account tree is cached; the money is not.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, FlatList, Pressable, RefreshControl, StyleSheet, ActivityIndicator,
   BackHandler,
@@ -122,6 +122,22 @@ export default function Accounts() {
   const rows = childrenOf.get(current ? current.guid : null) ?? [];
 
   const showMoney = connState === 'online' || connState === 'locked';
+
+  // Balances load once on mount and on pull-to-refresh, and nowhere else. So a
+  // mount that happened before the tunnel was up left them empty for good: the
+  // banner went away when the connection came back, and "Could not reach your
+  // ledger" appeared under the list instead, because that line only shows while
+  // connected. Seen on the S10 on 2026-09-22 with WireGuard up.
+  //
+  // So load them again on the way back, and only then. One read per recovery,
+  // not per connection change, which is what the mount-only rule above guards.
+  const wasShowingMoney = useRef(showMoney);
+  useEffect(() => {
+    const cameBack = showMoney && !wasShowingMoney.current;
+    wasShowingMoney.current = showMoney;
+    // Pull-to-refresh loads them itself a moment later.
+    if (cameBack && !refreshing) void loadBalances();
+  }, [showMoney, refreshing, loadBalances]);
 
   // Android's hardware back knows nothing about `trail`, because drilling into
   // the tree is local state and not a route push. Without this, back from three

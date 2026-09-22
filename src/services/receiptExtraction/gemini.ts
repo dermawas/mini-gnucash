@@ -14,7 +14,7 @@
 //      Edge Function has its own execution ceiling — but on-device a stalled
 //      request would otherwise hang the scan button indefinitely.
 
-import { EXTRACTION_PROMPT, RESPONSE_SCHEMA } from './prompt';
+import { RESPONSE_SCHEMA } from './prompt';
 import type { RawExtraction, ScanImage, TokenUsage } from './types';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
@@ -63,10 +63,25 @@ const GEMINI_FETCH_TIMEOUT_MS = 60_000;
 // making a failed scan feel hung.
 const RETRY_DELAYS_MS = [1_500, 6_000];
 
+// What a timeout and an unreachable Google say, named so scanReceipt.ts can
+// tell the two apart when it explains why Claude read a receipt instead.
+export const GEMINI_TIMEOUT_MESSAGE = 'The scan timed out. Please try again, or check your connection.';
+export const GEMINI_UNREACHABLE_MESSAGE = "Couldn't reach the AI scanner. Please check your connection.";
+
+// A timeout is marked on the error itself rather than read from `err.name`.
+// On the S10 a fetch this timer aborted did NOT arrive as an AbortError: on
+// 2026-09-22 a scan that ran into the 60 s limit said "Couldn't reach the AI
+// scanner", which sent the reader to their connection when the truth was that
+// Google was slow. Whether the timer fired is the one thing known for certain.
 function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEMINI_FETCH_TIMEOUT_MS);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(url, { ...init, signal: controller.signal })
+    .catch((err) => {
+      if (controller.signal.aborted) throw Object.assign(new Error('timed out'), { scanTimeout: true });
+      throw err;
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 // Maps a Gemini error response to a short, user-facing message instead of
@@ -166,7 +181,7 @@ export function friendlyGeminiError(status: number, errText: string): string {
 // the pictures knows it is looking at one receipt in pieces rather than at
 // several receipts, and the order is the only thing telling it which piece is
 // the top of the page -- the shots overlap, so content alone is ambiguous.
-function fetchGemini(apiKey: string, model: string, images: ScanImage[]) {
+function fetchGemini(apiKey: string, model: string, prompt: string, images: ScanImage[]) {
   return fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -179,7 +194,7 @@ function fetchGemini(apiKey: string, model: string, images: ScanImage[]) {
         contents: [
           {
             parts: [
-              { text: EXTRACTION_PROMPT },
+              { text: prompt },
               ...images.map((img) => ({
                 inline_data: { mime_type: img.mimeType, data: img.base64 },
               })),
@@ -198,6 +213,7 @@ function fetchGemini(apiKey: string, model: string, images: ScanImage[]) {
 export async function callGemini(
   apiKey: string,
   model: string,
+  prompt: string,
   images: ScanImage[]
 ): Promise<
   | { ok: true; data: RawExtraction; usage: TokenUsage | null }
@@ -205,7 +221,7 @@ export async function callGemini(
 > {
   let response: Response;
   try {
-    response = await fetchGemini(apiKey, model, images);
+    response = await fetchGemini(apiKey, model, prompt, images);
 
     // Gemini's own 503 message says spikes are "usually temporary", and most
     // do clear without the user ever seeing an error. Give up only after the
@@ -213,20 +229,20 @@ export async function callGemini(
     for (const delay of RETRY_DELAYS_MS) {
       if (response.status !== 503) break;
       await new Promise((resolve) => setTimeout(resolve, delay));
-      response = await fetchGemini(apiKey, model, images);
+      response = await fetchGemini(apiKey, model, prompt, images);
     }
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
+    if (err?.scanTimeout || err?.name === 'AbortError') {
       return {
         ok: false,
         kind: 'transient',
-        error: 'The scan timed out. Please try again, or check your connection.',
+        error: GEMINI_TIMEOUT_MESSAGE,
       };
     }
     return {
       ok: false,
       kind: 'transient',
-      error: "Couldn't reach the AI scanner. Please check your connection.",
+      error: GEMINI_UNREACHABLE_MESSAGE,
     };
   }
 
