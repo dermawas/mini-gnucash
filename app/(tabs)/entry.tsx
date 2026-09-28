@@ -189,6 +189,8 @@ export default function Entry() {
   const [saving, setSaving] = useState(false);
   /** Looking for a duplicate. Not saving yet, and must not say it is. */
   const [checkingDup, setCheckingDup] = useState(false);
+  /** The Yes/No box is open. Nothing is written until Yes, so no "Saving…". */
+  const [asking, setAsking] = useState(false);
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanSheet, setScanSheet] = useState(false);
@@ -814,7 +816,7 @@ export default function Entry() {
     ? 'Saved ✓'
     : checkingDup
       ? 'Checking…'
-    : saving
+    : saving && !asking
       ? 'Saving…'
       : missing
         // All three name what happens to the MONEY, not what the app does
@@ -1000,12 +1002,16 @@ export default function Entry() {
         'so a duplicate has to be unpicked in GnuCash desktop.',
       );
     }
+    // `saving` stays on through the question so the button cannot be tapped
+    // again; `asking` only stops it claiming to save.
+    setAsking(true);
     const go = await ask(
       dup ? 'Already got one like this' : dateWarning ? 'Check the date' : 'Save this?',
       [...warnings, entrySummary(fresh)].join('\n\n'),
       warnings.length ? 'Save anyway' : 'Yes, save',
       warnings.length > 0,
     );
+    setAsking(false);
     if (!go) { setSaving(false); return; }
 
     // `described` has already been checked, so this is the user's own words
@@ -1221,30 +1227,42 @@ ${extras.join(' · ')}` : head;
    * from the phone, so "today" is worth confirming too.
    */
   function entrySummary(bal: Record<string, Balance> | null): string {
+    // One fact per line, each with its label, so the eye runs straight down
+    // it. The joining word follows the money: an expense is paid FOR a
+    // category ("to Transportation" read as if Transportation were a payee),
+    // income comes FROM its source, and a move goes TO an account.
+    // Each item's own note goes straight under the account it belongs to.
+    // With several items the account name leads, since "For: 3 accounts"
+    // alone does not say which item the note is on.
+    const itemNotes = items.flatMap((r, i) => {
+      const memo = r.memo.trim();
+      if (!memo) return [];
+      return items.length > 1 ? [`Note, ${itemNames[i] ?? '…'}: ${memo}`] : [`Note: ${memo}`];
+    });
     const lines: string[] = [];
     if (crossCurrency) {
-      lines.push(`Move ${formatAmount(amt(funders[0]), fromCcy ?? 'IDR')} from ${funderLabel}`);
-      lines.push(`to ${formatAmount(amt(items[0]), toCcy ?? 'IDR')} in ${itemLabel}`);
-      if (rate) lines.push(`About 1 ${fromCcy} = ${rateText(rate, toCcy)} ${toCcy}`);
+      lines.push(`Move ${formatAmount(amt(funders[0]), fromCcy ?? 'IDR')}`);
+      lines.push(`From: ${funderLabel}`);
+      lines.push(`To: ${itemLabel}, ${formatAmount(amt(items[0]), toCcy ?? 'IDR')}`, ...itemNotes);
+      if (rate) lines.push(`Rate: about 1 ${fromCcy} = ${rateText(rate, toCcy)} ${toCcy}`);
     } else {
       const total = formatAmount(required, currency);
-      lines.push(
-        transferMode ? `Move ${total} from ${funderLabel}`
-          : inflow ? `Receive ${total} into ${funderLabel}`
-          : `Pay ${total} from ${funderLabel}`,
-      );
-      lines.push(inflow ? `from ${itemLabel}` : `to ${itemLabel}`);
-      if (moneyBack.length > 0) lines.push(`after ${formatAmount(backTotal, currency)} back`);
+      if (transferMode) {
+        lines.push(`Move ${total}`, `From: ${funderLabel}`, `To: ${itemLabel}`, ...itemNotes);
+      } else if (inflow) {
+        lines.push(`Receive ${total}`, `Into: ${funderLabel}`, `From: ${itemLabel}`, ...itemNotes);
+      } else {
+        lines.push(`Pay ${total}`, `From: ${funderLabel}`, `For: ${itemLabel}`, ...itemNotes);
+      }
+      if (moneyBack.length > 0) lines.push(`Money back: ${formatAmount(backTotal, currency)}`);
     }
-    lines.push(`“${description.trim()}”`);
-    lines.push(new Date(`${postDate}T00:00:00`).toLocaleDateString(undefined, {
+    lines.push(`Description: ${description.trim()}`);
+    lines.push(`Date: ${new Date(`${postDate}T00:00:00`).toLocaleDateString(undefined, {
       day: 'numeric', month: 'short', year: 'numeric',
-    }));
-    const bl = balanceLines(bal);
-    if (bl.length > 0) {
-      lines.push('');
-      for (const l of bl) lines.push(`${l.name}: ${balanceText(l)}`);
-    }
+    })}`);
+    // The name on one line and the figures under it. On one line together
+    // they wrapped mid-figure on the phone, with the arrow starting a line.
+    for (const l of balanceLines(bal)) lines.push('', l.name, balanceText(l));
     return lines.join('\n');
   }
 
