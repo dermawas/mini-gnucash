@@ -108,7 +108,7 @@ import {
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
 import {
   descriptions as descStore, memos as memoStore, isStale, suggest,
-  type Suggestion,
+  MAX_DESC_SUGGESTIONS, type Suggestion,
 } from '../../src/services/wordingMemory';
 import { scanReceipt, type MatchBasis, type ScanSource } from '../../src/services/scanReceipt';
 import { generateTransactionId } from '../../src/utils/idempotency';
@@ -292,7 +292,7 @@ export default function Entry() {
 
   // What to offer under the description field right now.
   const descSuggestions = useMemo(
-    () => (descFocused ? suggest(descRows, description) : []),
+    () => (descFocused ? suggest(descRows, description, MAX_DESC_SUGGESTIONS) : []),
     [descFocused, description, descRows],
   );
 
@@ -1415,9 +1415,17 @@ ${extras.join(' · ')}` : head;
 
             Under the field rather than over it: this sits at the very bottom
             of the form, so there is nothing below to cover, and a list that
-            drops downward is where a reader's eye already is. */}
+            drops downward is where a reader's eye already is.
+
+            Its own ScrollView, five and a half rows tall, so the half row
+            says there is more. `nestedScrollEnabled` because Android will not
+            scroll a vertical list inside the page's own otherwise. */}
         {descSuggestions.length > 0 ? (
-          <View style={styles.descSuggest}>
+          <ScrollView
+            style={styles.descSuggest}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+          >
             {descSuggestions.map((s, i) => (
               <Pressable
                 key={s.text}
@@ -1441,7 +1449,7 @@ ${extras.join(' · ')}` : head;
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
         ) : null}
 
         {showSubtotal ? (
@@ -1589,6 +1597,8 @@ const styles = StyleSheet.create({
     borderColor: theme.hairlineStrong,
     borderRadius: 10,
     overflow: 'hidden',
+    // Five and a half rows: a row is 44 at its least plus a 1px divider.
+    maxHeight: 248,
   },
   descRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

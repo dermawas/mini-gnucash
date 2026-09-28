@@ -35,6 +35,11 @@ Notable changes to mini-gnucash. Format follows
   gallery, up to six at a time. The pieces usually overlap, so the scanner is
   told they are one receipt in reading order and that a figure appearing twice
   is the same money, not a second purchase.
+- The description list shows up to 20 matches and scrolls, instead of stopping
+  at five. Matches that start with what you typed still come first. Before,
+  typing a name filled all five places with descriptions starting with it and
+  one other, so a description with the name later in it, such as "Snacks for
+  Sam", could not appear.
 
 ### Not built yet
 

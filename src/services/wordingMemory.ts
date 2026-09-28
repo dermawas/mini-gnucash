@@ -72,6 +72,18 @@ export const MIN_CHARS = 2;
 /** More than this and the list is taller than the field it belongs to. */
 export const MAX_SUGGESTIONS = 5;
 
+/**
+ * The description's list, which scrolls inside a box five rows tall.
+ *
+ * Five was not enough. On 2026-09-28 one name matched 32 descriptions in the
+ * book, four of them beginning with it, so the tiers left one place for the
+ * other 28 and the one being looked for, used twice, never reached the screen. Reserving
+ * places for the second tier would not have fixed it either: it ranks low
+ * among the 28. A longer list that scrolls keeps the tier order and puts it a
+ * short scroll away.
+ */
+export const MAX_DESC_SUGGESTIONS = 20;
+
 export type Suggestion = WordingRow & {
   /**
    * When this phone last saved an entry using it. ISO, absent for wording that
