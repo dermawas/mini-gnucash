@@ -102,8 +102,8 @@ import {
 } from '../../src/store/accountStore';
 import { useConnection } from '../../src/store/connectionStore';
 import {
-  recordEntry, transfer as transferRpc, getRegister, type RegisterRow,
-  markInFlight, clearInFlight, type Account, type EntrySplit,
+  recordEntry, transfer as transferRpc, getRegister, getBalances, type RegisterRow,
+  markInFlight, clearInFlight, type Account, type EntrySplit, type Balance,
 } from '../../src/services/api';
 import { getLastFunder, setLastFunder } from '../../src/services/lastFunder';
 import {
@@ -139,6 +139,22 @@ const FUNDER_TYPES = [...ASSET_TYPES, 'CREDIT', 'LIABILITY', 'STOCK', 'MUTUAL'];
 /** What `mgc_transfer` will move between, and therefore all that can cross a
  *  currency boundary from this screen. */
 const TRANSFERABLE = ASSET_TYPES;
+/** Accounts whose balance means something at the till: bank, cash, e-wallet,
+ *  card. An expense or income account's balance is its all-time total, which
+ *  says nothing about the entry being typed, so it is not shown. */
+const MONEY_TYPES = [...ASSET_TYPES, 'CREDIT', 'LIABILITY'];
+
+/** One account's balance before this entry, and after it once the amount is
+ *  known. In the book's own sign, the same as the Accounts screen: a card you
+ *  owe on is negative and goes further negative when you spend on it. */
+type BalanceLine = {
+  guid: string;
+  name: string;
+  ccy: string;
+  scu: number;
+  before: number;
+  after: number | null;
+};
 
 export default function Entry() {
   const byGuid = useAccounts((s) => s.byGuid);
@@ -262,6 +278,30 @@ export default function Entry() {
   // one until something else happened to refresh it.
   useEffect(() => { void syncWording(); }, [accountsEpoch, syncWording]);
 
+  // Balances, for the before-and-after line and the summary asked before a
+  // save. The owner's request, 2026-09-28: "shown how much balance before and
+  // after transaction".
+  //
+  // A failed fetch drops what was there rather than keeping it, the rule the
+  // Accounts screen holds to: an old balance read as a current one is worse
+  // than none. It is also silent -- off the VPN the entry still saves, and the
+  // line simply does not appear.
+  //
+  // Never masked by the Accounts screen's "hide balances" switch. The owner,
+  // 2026-09-28: the balance in the entry "should not be hidden, regardless of
+  // the global balance setting". It is the figure you are acting on, the same
+  // reason `privacyStore.ts` leaves amounts being typed alone.
+  const [balances, setBalances] = useState<Record<string, Balance> | null>(null);
+  const loadBalances = useCallback(async (): Promise<Record<string, Balance> | null> => {
+    const result = await getBalances();
+    if (!result.ok) { setBalances(null); return null; }
+    const map: Record<string, Balance> = {};
+    for (const b of result.data) map[b.guid] = b;
+    setBalances(map);
+    return map;
+  }, []);
+  useEffect(() => { void loadBalances(); }, [accountsEpoch, loadBalances]);
+
   /**
    * Teach the note list every line note this entry carried.
    *
@@ -288,7 +328,10 @@ export default function Entry() {
     // GnuCash desktop meanwhile. The read is from storage and the refetch only
     // happens when the copy is genuinely old.
     void syncWording();
-  }, [loadAccounts, syncWording]));
+    // Every visit, so a balance changed in GnuCash desktop or by the last
+    // entry is current when the next one starts.
+    void loadBalances();
+  }, [loadAccounts, syncWording, loadBalances]));
 
   // What to offer under the description field right now.
   const descSuggestions = useMemo(
@@ -641,6 +684,70 @@ export default function Entry() {
     // Nothing is derived across a currency boundary, so "rest" is not on offer.
     (!crossCurrency || amt(funders[0]) > 0);
 
+  /**
+   * Before and after, for every money account this entry touches.
+   *
+   * Each row's split is worked out with the same signs the write uses (see
+   * the header), and a single funder left empty takes minus the rest, which is
+   * what `mgc_record_entry` will derive for it. An amount not typed yet leaves
+   * `after` empty rather than guessing, so the line shows the balance alone.
+   *
+   * Arithmetic on this device, where the rest of the screen avoids it. It is
+   * a preview only: nothing here is sent, and the book stays the source.
+   */
+  function balanceLines(bal: Record<string, Balance> | null): BalanceLine[] {
+    if (!bal) return [];
+    const moves: { guid: string | null; amount: number | null }[] = [];
+    if (crossCurrency) {
+      const out = amt(funders[0]);
+      const inn = amt(items[0]);
+      moves.push({ guid: funders[0].accountGuid, amount: out > 0 ? -out : null });
+      moves.push({ guid: items[0].accountGuid, amount: inn > 0 ? inn : null });
+    } else {
+      const known = [
+        ...items.map((r) => ({ r, v: sgn * amt(r) })),
+        ...moneyBack.map((r) => ({ r, v: -sgn * amt(r) })),
+        ...funders.filter((r) => r.raw.trim()).map((r) => ({ r, v: -sgn * amt(r) })),
+      ];
+      for (const { r, v } of known) {
+        moves.push({ guid: r.accountGuid, amount: v !== 0 ? v : null });
+      }
+      const blanks = funders.filter((r) => !r.raw.trim());
+      const rest = -known.reduce((t, k) => t + k.v, 0);
+      for (const r of blanks) {
+        moves.push({ guid: r.accountGuid, amount: blanks.length === 1 && rest !== 0 ? rest : null });
+      }
+    }
+
+    const lines: BalanceLine[] = [];
+    for (const m of moves) {
+      if (!m.guid) continue;
+      const a = byGuid(m.guid);
+      const b = bal[m.guid];
+      if (!a || !b || !MONEY_TYPES.includes(a.account_type)) continue;
+      // The same account twice (paid from it, and part of it back into it) is
+      // one line with both amounts applied.
+      const seen = lines.find((l) => l.guid === m.guid);
+      if (seen) {
+        seen.after = seen.after == null || m.amount == null ? null : seen.after + m.amount;
+        continue;
+      }
+      lines.push({
+        guid: m.guid,
+        name: a.name,
+        ccy: a.commodity_mnemonic ?? currency,
+        scu: a.commodity_scu,
+        before: b.balance_total,
+        after: m.amount == null ? null : b.balance_total + m.amount,
+      });
+    }
+    return lines;
+  }
+  const balanceNow = balanceLines(balances);
+  const money = (x: number, l: BalanceLine) => formatAmount(x, l.ccy, l.scu);
+  const balanceText = (l: BalanceLine) =>
+    l.after == null ? money(l.before, l) : `${money(l.before, l)} → ${money(l.after, l)}`;
+
   // A receipt cannot be dated after today -- see `isFutureDate`'s header.
   // There is no legitimate case on the other side of this one, so unlike the
   // stale-date warning below it is a hard stop, not a tap-through.
@@ -798,13 +905,13 @@ export default function Entry() {
    * `Alert` is callback-shaped, so without this the duplicate check would have
    * to be written inside-out around it.
    */
-  function ask(title: string, message: string, proceed: string): Promise<boolean> {
+  function ask(title: string, message: string, proceed: string, warn: boolean): Promise<boolean> {
     return new Promise((resolve) => {
       Alert.alert(
         title, message,
         [
-          { text: 'Go back', style: 'cancel', onPress: () => resolve(false) },
-          { text: proceed, style: 'destructive', onPress: () => resolve(true) },
+          { text: 'No, go back', style: 'cancel', onPress: () => resolve(false) },
+          { text: proceed, style: warn ? 'destructive' : 'default', onPress: () => resolve(true) },
         ],
         { cancelable: true, onDismiss: () => resolve(false) },
       );
@@ -868,31 +975,38 @@ export default function Entry() {
     // let you record, and it is a misread year -- not a late receipt -- that
     // this is actually guarding against.
     const dateWarning = dateConcern(postDate);
-    if (dateWarning) {
-      const go = await ask('Check the date', dateWarning, 'Save anyway');
-      if (!go) { setSaving(false); return; }
-    }
 
+    // Fresh balances in the same wait as the duplicate check, so the summary
+    // below shows what the book holds now, not what it held when the tab
+    // opened. Either one failing just leaves its part out.
     setCheckingDup(true);
-    const dup = await findDuplicate();
+    const [dup, fresh] = await Promise.all([findDuplicate(), loadBalances()]);
     setCheckingDup(false);
+
+    // ONE question before every write, with the whole entry in it. The owner's
+    // request, 2026-09-28: "1 more confirmation with option yes or no button
+    // that shows the summary of transaction". The date and duplicate warnings
+    // used to be questions of their own; they now go at the top of this one,
+    // so a save never asks twice.
+    const warnings: string[] = [];
+    if (dateWarning) warnings.push(dateWarning);
     if (dup) {
       const same = `${dup.description || 'An entry'} — ${
         formatAmount(Math.abs(dup.quantity), crossCurrency ? (fromCcy ?? currency) : currency)
       }`;
-      const go = await ask(
-        'Already got one like this',
-        `${funderLabel} already has this on the same date:
-
-${same}
-
-` +
-          'If that is this same purchase, go back. This app cannot edit or delete, ' +
-          'so a duplicate has to be unpicked in GnuCash desktop.',
-        'Record anyway',
+      warnings.push(
+        `${funderLabel} already has this on the same date:\n${same}\n\n` +
+        'If that is this same purchase, go back. This app cannot edit or delete, ' +
+        'so a duplicate has to be unpicked in GnuCash desktop.',
       );
-      if (!go) { setSaving(false); return; }
     }
+    const go = await ask(
+      dup ? 'Already got one like this' : dateWarning ? 'Check the date' : 'Save this?',
+      [...warnings, entrySummary(fresh)].join('\n\n'),
+      warnings.length ? 'Save anyway' : 'Yes, save',
+      warnings.length > 0,
+    );
+    if (!go) { setSaving(false); return; }
 
     // `described` has already been checked, so this is the user's own words
     // every time. Nothing generic is ever written to the book.
@@ -937,6 +1051,9 @@ ${same}
         setSaved(true);
         reset();
         setTimeout(() => setSaved(false), 1200);
+        void loadBalances();
+        // Kept in full: the rate here is the SERVER's, which the question
+        // before the save could only estimate.
         Alert.alert(
           already ? 'Already in your book' : 'Saved',
           already ? `${summary}
@@ -996,17 +1113,22 @@ This move may or may not have reached your book. The app will check and tell you
       void learnMemos();
       const already = result.data.status === 'already_recorded';
       const summary = writtenSummary();
+      // One line now, not the whole entry: it was all in the question just
+      // answered. The full text stays only for "already in your book", which
+      // is news the question could not have told you.
+      const short = summary.split('\n')[0];
       // Either way it is IN THE BOOK, so either way the form clears. It used
       // to be left full on "already recorded", which invited entering it a
       // second time -- the opposite of what that answer means.
       setSaved(true);
       reset();
       setTimeout(() => setSaved(false), 1200);
+      void loadBalances();
       Alert.alert(
         already ? 'Already in your book' : 'Saved',
         already ? `${summary}
 
-This had already been written; nothing was recorded twice.` : summary,
+This had already been written; nothing was recorded twice.` : `${short}.`,
       );
       return;
     }
@@ -1089,6 +1211,41 @@ to ${itemLabel}`;
     }
     return extras.length ? `${head}
 ${extras.join(' · ')}` : head;
+  }
+
+  /**
+   * What the question before a save shows: the whole entry, then the balances.
+   *
+   * Unlike `writtenSummary` it always names the date and the description.
+   * This is the last look before something that cannot be edited or deleted
+   * from the phone, so "today" is worth confirming too.
+   */
+  function entrySummary(bal: Record<string, Balance> | null): string {
+    const lines: string[] = [];
+    if (crossCurrency) {
+      lines.push(`Move ${formatAmount(amt(funders[0]), fromCcy ?? 'IDR')} from ${funderLabel}`);
+      lines.push(`to ${formatAmount(amt(items[0]), toCcy ?? 'IDR')} in ${itemLabel}`);
+      if (rate) lines.push(`About 1 ${fromCcy} = ${rateText(rate, toCcy)} ${toCcy}`);
+    } else {
+      const total = formatAmount(required, currency);
+      lines.push(
+        transferMode ? `Move ${total} from ${funderLabel}`
+          : inflow ? `Receive ${total} into ${funderLabel}`
+          : `Pay ${total} from ${funderLabel}`,
+      );
+      lines.push(inflow ? `from ${itemLabel}` : `to ${itemLabel}`);
+      if (moneyBack.length > 0) lines.push(`after ${formatAmount(backTotal, currency)} back`);
+    }
+    lines.push(`“${description.trim()}”`);
+    lines.push(new Date(`${postDate}T00:00:00`).toLocaleDateString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric',
+    }));
+    const bl = balanceLines(bal);
+    if (bl.length > 0) {
+      lines.push('');
+      for (const l of bl) lines.push(`${l.name}: ${balanceText(l)}`);
+    }
+    return lines.join('\n');
   }
 
   const showSubtotal = moneyBack.length > 0 || funders.length > 1;
@@ -1323,6 +1480,21 @@ ${extras.join(' · ')}` : head;
                 : 'Leave the last one empty and it takes whatever is left.'}
             </Text>
           </>
+        ) : null}
+
+        {/* Before and after, for each money account the entry touches, right
+            under the accounts they belong to. Updates as the amount is typed.
+            Absent when the book cannot be reached. Never masked; see the note
+            by `balances`. */}
+        {balanceNow.length > 0 ? (
+          <View style={styles.balanceBox}>
+            {balanceNow.map((l) => (
+              <View key={l.guid} style={styles.balanceRow}>
+                <Text style={styles.balanceName} numberOfLines={1}>{l.name}</Text>
+                <Text style={styles.balanceValue} numberOfLines={1}>{balanceText(l)}</Text>
+              </View>
+            ))}
+          </View>
         ) : null}
 
         <View style={styles.sectionHead}>
@@ -1709,6 +1881,10 @@ const styles = StyleSheet.create({
   },
   link: { color: theme.ink, fontSize: 11, fontFamily: fonts.sansMedium },
   hint: { color: theme.inkFaint, fontSize: 11, lineHeight: 16, marginTop: 8, fontFamily: fonts.sans },
+  balanceBox: { marginTop: 10, gap: 4 },
+  balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  balanceName: { flex: 1, color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
+  balanceValue: { color: theme.inkSoft, fontSize: 12, fontFamily: fonts.mono },
   rateBox: {
     backgroundColor: theme.surfaceSoft, borderRadius: 12, padding: 16, marginTop: 20,
   },

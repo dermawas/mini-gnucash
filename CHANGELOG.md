@@ -40,6 +40,13 @@ Notable changes to mini-gnucash. Format follows
   typing a name filled all five places with descriptions starting with it and
   one other, so a description with the name later in it, such as "Snacks for
   Sam", could not appear.
+- Before every save, one Yes/No question with the whole entry in it: the
+  amount, the accounts, the description, the date, and each money account's
+  balance before and after. A date or duplicate warning goes at the top of the
+  same question, so a save never asks twice. After saving, a one-line "Saved".
+- The Entry screen shows the balance of each bank, cash, e-wallet or card
+  account the entry touches, before and after, updating as you type. It is not
+  hidden by the Accounts screen's "hide balances" switch.
 
 ### Not built yet
 
