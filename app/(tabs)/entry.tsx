@@ -92,6 +92,7 @@ import AmountInput from '../../src/components/AmountInput';
 import { TextField } from '../../src/components/TextField';
 import { AccountSheet } from '../../src/components/AccountSheet';
 import { ScanSourceSheet } from '../../src/components/ScanSourceSheet';
+import { FixBalanceSheet, type FixDirection } from '../../src/components/FixBalanceSheet';
 import { Chip } from '../../src/components/Chip';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { ConnectionBanner } from '../../src/components/ConnectionBanner';
@@ -194,6 +195,8 @@ export default function Entry() {
   const [saved, setSaved] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanSheet, setScanSheet] = useState(false);
+  /** The account whose Fix balance sheet is open, or null. */
+  const [fixFor, setFixFor] = useState<string | null>(null);
   // Said under the items when Claude read the receipt rather than Gemini,
   // with how much of the day's Claude allowance that left. Gemini says nothing:
   // it is the normal case, and a line on every scan would stop being read.
@@ -473,6 +476,7 @@ export default function Entry() {
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
         if (picker) { setPicker(null); return true; }
+        if (fixFor) { setFixFor(null); return true; }
         if (dirty) {
           Alert.alert(
             'Discard this entry?',
@@ -488,7 +492,7 @@ export default function Entry() {
       });
       return () => sub.remove();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [picker, dirty, items, moneyBack, funders, description]),
+    }, [picker, fixFor, dirty, items, moneyBack, funders, description]),
   );
 
   const inflow = direction === 'inflow';
@@ -749,6 +753,42 @@ export default function Entry() {
   const money = (x: number, l: BalanceLine) => formatAmount(x, l.ccy, l.scu);
   const balanceText = (l: BalanceLine) =>
     l.after == null ? money(l.before, l) : `${money(l.before, l)} → ${money(l.after, l)}`;
+
+  // Fix balance: offered on the paying account's line only, in Money out and
+  // Money in. A move has two money accounts and no category, so "the
+  // difference" has no one place to go.
+  const fixGuid = !transferMode ? funders[0]?.accountGuid ?? null : null;
+  // One item and one paying account, or there is no telling which row the
+  // difference belongs in. Tapping with more rows says so rather than guessing.
+  const fixFits = items.length === 1 && funders.length === 1 && moneyBack.length === 0;
+  function openFix(guid: string) {
+    if (!fixFits) {
+      Alert.alert(
+        'Fix balance needs a simple entry',
+        'It works with one item and one paying account. Remove the extra rows first.',
+      );
+      return;
+    }
+    // Fresh from the book, so the number in the sheet is not the one read when
+    // the screen opened.
+    void loadBalances();
+    setFixFor(guid);
+  }
+  function applyFix(amount: number, d: FixDirection) {
+    setFixFor(null);
+    const raw = String(amount);
+    if (d === direction) {
+      setItems(items.map((r, i) => (i === 0 ? { ...r, raw } : r)));
+      return;
+    }
+    // The other way round: an expense category means nothing on money in, so
+    // the item's account goes. The description and the paying account stay,
+    // which is why this does not go through chooseDirection's clear-everything.
+    setDirection(d);
+    setItems([{ ...newRow(), raw }]);
+  }
+  const fixAcct = fixFor ? byGuid(fixFor) : undefined;
+  const fixBal = fixFor && balances ? balances[fixFor] : undefined;
 
   // A receipt cannot be dated after today -- see `isFutureDate`'s header.
   // There is no legitimate case on the other side of this one, so unlike the
@@ -1510,6 +1550,16 @@ ${extras.join(' · ')}` : head;
               <View key={l.guid} style={styles.balanceRow}>
                 <Text style={styles.balanceName} numberOfLines={1}>{l.name}</Text>
                 <Text style={styles.balanceValue} numberOfLines={1}>{balanceText(l)}</Text>
+                {l.guid === fixGuid ? (
+                  <Pressable
+                    onPress={() => openFix(l.guid)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Fix the balance of ${l.name}`}
+                  >
+                    <Text style={[styles.fixLink, !fixFits && styles.fixLinkOff]}>Fix balance</Text>
+                  </Pressable>
+                ) : null}
               </View>
             ))}
           </View>
@@ -1703,6 +1753,18 @@ ${extras.join(' · ')}` : head;
         </View>
       </View>
 
+      <FixBalanceSheet
+        key={fixFor ?? 'none'}
+        visible={!!fixFor && !!fixAcct}
+        name={fixAcct?.name ?? ''}
+        ccy={fixAcct?.commodity_mnemonic ?? currency}
+        scu={fixAcct?.commodity_scu ?? 1}
+        owed={!!fixAcct && ['CREDIT', 'LIABILITY'].includes(fixAcct.account_type)}
+        present={fixBal ? fixBal.balance_present : null}
+        total={fixBal ? fixBal.balance_total : null}
+        onUse={applyFix}
+        onDismiss={() => setFixFor(null)}
+      />
       <ScanSourceSheet
         visible={scanSheet}
         onDismiss={() => setScanSheet(false)}
@@ -1903,6 +1965,8 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   balanceName: { flex: 1, color: theme.inkFaint, fontSize: 12, fontFamily: fonts.sans },
   balanceValue: { color: theme.inkSoft, fontSize: 12, fontFamily: fonts.mono },
+  fixLink: { color: theme.ink, fontSize: 12, fontFamily: fonts.sansMedium, textDecorationLine: 'underline' },
+  fixLinkOff: { color: theme.inkFaint },
   rateBox: {
     backgroundColor: theme.surfaceSoft, borderRadius: 12, padding: 16, marginTop: 20,
   },
