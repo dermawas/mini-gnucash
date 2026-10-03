@@ -8,6 +8,13 @@ Notable changes to mini-gnucash. Format follows
 
 ### Added
 
+- Fix balance, on the paying account's balance line in Money out and Money
+  in. Type the balance your bank app shows, and the difference from the book
+  becomes the entry's amount. For when several payments were never entered
+  and you want to catch up in one go. If the bank shows more than the book,
+  the entry switches to Money in. A card is compared in what you owe. It
+  works with one item and one paying account.
+
 - A second scanner for when Gemini is busy or out of quota. The same pictures
   go to Claude Code on your own server, running on your own Claude
   subscription, reached over your VPN like the ledger. The server allows a
